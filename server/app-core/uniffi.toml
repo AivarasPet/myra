@@ -1,0 +1,3 @@
+[bindings.swift]
+ffi_module_name = "SvertoCoreFFI"
+ffi_module_filename = "sverto_coreFFI"

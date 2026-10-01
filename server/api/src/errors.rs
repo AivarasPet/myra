@@ -60,7 +60,12 @@ impl ApiError {
     /// `BusinessValidationErrorDto` as a structured 422 response
     /// instead of a generic 500.
     pub fn from_anyhow(err: anyhow::Error) -> Self {
-        if let Some(val_err) = err.downcast_ref::<BusinessValidationErrorDto>() {
+        if err
+            .downcast_ref::<business::dtos::refresh_token_error_dto::RefreshTokenError>()
+            .is_some()
+        {
+            ApiError::Unauthorized
+        } else if let Some(val_err) = err.downcast_ref::<BusinessValidationErrorDto>() {
             ApiError::Validation(
                 val_err
                     .errors

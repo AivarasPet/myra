@@ -4,6 +4,7 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.sverto.app.core.ai.CategorySuggester
+import com.sverto.app.core.ai.CategorySuggestionConsent
 import com.sverto.app.core.ai.CategorySuggestionController
 import com.sverto.app.core.ai.SuggestionState
 import com.sverto.app.feature.transactions.create.CorrectionState
@@ -19,8 +20,11 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import uniffi.sverto_core.AppStore
 import uniffi.sverto_core.CategoryItem
 import uniffi.sverto_core.CreateTransactionGroupInput
@@ -32,6 +36,7 @@ private const val TAG = "CreateGroupVM"
 
 class CreateTransactionGroupViewModel(
     private val store: AppStore,
+    private val categorySuggester: CategorySuggester,
 ) : ViewModel() {
     private var editGroupId: String? = null
     private var fromSelection = false
@@ -70,14 +75,25 @@ class CreateTransactionGroupViewModel(
 
     private val suggestionController =
         CategorySuggestionController(
-            isAvailable = { CategorySuggester.isAvailable() },
+            isAvailable = { categorySuggester.isAvailable() },
             loadCategories = { ensureCategories() },
-            suggest = { description, categories -> CategorySuggester.suggest(description, categories) },
+            suggest = { description, categories -> categorySuggester.suggest(description, categories) },
         )
     val suggestionState: StateFlow<SuggestionState> = suggestionController.state
 
     init {
-        CategorySuggester.prefetch(viewModelScope)
+        viewModelScope.launch {
+            categorySuggester.settings
+                .map { it.consent }
+                .distinctUntilChanged()
+                .collect { consent ->
+                    if (consent == CategorySuggestionConsent.ENABLED) {
+                        categorySuggester.prefetch(viewModelScope)
+                    } else {
+                        suggestionController.reset()
+                    }
+                }
+        }
     }
 
     private suspend fun ensureCategories(): List<CategoryItem> {
@@ -88,9 +104,12 @@ class CreateTransactionGroupViewModel(
     }
 
     fun onDescriptionCommitted() {
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch {
+            val consent = categorySuggester.settings.value
+            if (consent.consent != CategorySuggestionConsent.ENABLED) return@launch
             val committed = _formState.value.description
-            val suggested = suggestionController.suggestFor(committed) ?: return@launch
+            val suggested = withContext(Dispatchers.IO) { suggestionController.suggestFor(committed) } ?: return@launch
+            if (categorySuggester.settings.value !== consent) return@launch
             val fresh = _formState.value
             if (fresh.description != committed) return@launch
             if (fresh.categoryId == null || fresh.categoryFromAi) {
@@ -112,6 +131,7 @@ class CreateTransactionGroupViewModel(
     }
 
     fun applySuggestion() {
+        if (categorySuggester.settings.value.consent != CategorySuggestionConsent.ENABLED) return
         val category = suggestionController.takeSuggestion() ?: return
         _formState.update { state ->
             state.copy(

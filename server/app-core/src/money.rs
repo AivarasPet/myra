@@ -1,8 +1,8 @@
 #[uniffi::export]
-pub fn format_money(amount: f64, ticker: String, signed: bool) -> String {
+pub fn format_money(amount: f64, ticker: String, show_sign: bool) -> String {
     let sign = if amount < 0.0 {
         "-"
-    } else if signed {
+    } else if show_sign {
         "+"
     } else {
         ""

@@ -1,0 +1,75 @@
+import Foundation
+import Observation
+import SvertoCore
+
+@Observable
+final class QuickUploadViewModel {
+    private(set) var items: [QuickUploadUiItem] = []
+
+    private let store: AppStore
+    private var bridge: QuickUploadsObserverBridge?
+
+    init(store: AppStore) {
+        self.store = store
+    }
+
+    func start() {
+        guard bridge == nil else { return }
+        let bridge = QuickUploadsObserverBridge { [weak self] state in
+            Task { @MainActor [weak self] in
+                self?.items = state.items.map(QuickUploadUiItem.init(item:))
+            }
+        }
+        self.bridge = bridge
+        store.observeQuickUploads(observer: bridge)
+        Task { await store.refreshQuickUploads() }
+    }
+
+    func stop() {
+        guard bridge != nil else { return }
+        bridge = nil
+        store.unobserveQuickUploads()
+    }
+
+    func queue(_ prepared: PreparedQuickUpload) {
+        let store = self.store
+        Task {
+            await Task.detached {
+                store.queueQuickUpload(imageData: prepared.imageData, thumbnail: prepared.thumbnail, mimeType: prepared.mimeType)
+            }.value
+            await store.refreshQuickUploads()
+        }
+    }
+
+    func refresh() async {
+        await store.refreshQuickUploads()
+    }
+
+    func retry(id: String) async {
+        await store.refreshQuickUploads()
+    }
+
+    func dismiss(id: String) async {
+        items.removeAll { $0.id == id }
+        await store.dismissQuickUpload(id: id)
+    }
+
+    func complete(id: String, accepted: Bool) async {
+        items.removeAll { $0.id == id }
+        await store.completeQuickUpload(uploadId: id, accepted: accepted)
+    }
+}
+
+private extension QuickUploadUiItem {
+    init(item: UnifiedQuickUploadItem) {
+        self.init(
+            id: item.id,
+            status: QuickUploadStatus(serverStatus: item.status),
+            thumbnail: item.thumbnail,
+            proposalType: item.proposalType.flatMap(ProposalType.init(rawValue:)),
+            proposalSummary: ProposalMapper.summary(proposalData: item.proposalData),
+            errorMessage: item.errorMessage,
+            createdAt: item.createdAt
+        )
+    }
+}

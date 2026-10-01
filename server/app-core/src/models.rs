@@ -354,7 +354,7 @@ pub struct AccountHoldingItem {
     pub current_price: f64,
 }
 
-#[derive(Debug, Clone, uniffi::Record)]
+#[derive(Debug, Clone, Default, uniffi::Record)]
 pub struct AccountDetailState {
     pub is_loading: bool,
     pub error: Option<String>,
@@ -398,7 +398,7 @@ pub struct LotItem {
     pub account_name: String,
 }
 
-#[derive(Debug, Clone, uniffi::Record)]
+#[derive(Debug, Clone, Default, uniffi::Record)]
 pub struct AssetDetailState {
     pub is_loading: bool,
     pub error: Option<String>,

@@ -1,0 +1,9 @@
+#include "Base.xcconfig"
+PRODUCT_BUNDLE_IDENTIFIER = com.sverto.app.dev
+SHARE_BUNDLE_IDENTIFIER = com.sverto.app.dev.share
+APP_GROUP_IDENTIFIER = group.com.sverto.app.dev
+PRODUCT_NAME = Sverto
+INFOPLIST_KEY_CFBundleDisplayName = Sverto Dev
+APP_ENV = dev
+ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon-Dev
+INFOPLIST_FILE = Config/Info-Dev.plist

@@ -1,0 +1,23 @@
+// Shared build settings for every configuration. Dev.xcconfig / Prod.xcconfig include this file.
+
+IPHONEOS_DEPLOYMENT_TARGET = 26.0
+TARGETED_DEVICE_FAMILY = 1,2
+SWIFT_VERSION = 6.0
+SWIFT_STRICT_CONCURRENCY = complete
+SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor
+SWIFT_APPROACHABLE_CONCURRENCY = YES
+SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES
+SWIFT_TREAT_WARNINGS_AS_ERRORS = NO
+ENABLE_USER_SCRIPT_SANDBOXING = NO
+// The Rust xcframework only ships an arm64 simulator slice, so Release (all archs) must not link x86_64.
+EXCLUDED_ARCHS[sdk=iphonesimulator*] = x86_64
+CODE_SIGN_STYLE = Automatic
+MARKETING_VERSION = 0.1.0
+CURRENT_PROJECT_VERSION = 1
+ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor
+API_BASE_URL = http:/$()/localhost:7002
+CLERK_PUBLISHABLE_KEY =
+DEVELOPMENT_TEAM =
+
+// make writes Generated.xcconfig from .env; it must come last so its values win.
+#include? "Generated.xcconfig"

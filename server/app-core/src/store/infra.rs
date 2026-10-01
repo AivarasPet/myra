@@ -163,12 +163,13 @@ impl SharedInfra {
         {
             let session = self.database_session.lock().unwrap();
             if let Some(ref s) = *session {
+                if !self.has_connectivity() {
+                    return s.access_token.clone();
+                }
                 let valid = !self.auth_invalidated.load(Ordering::Relaxed)
-                    && s.access_token.as_ref().is_some_and(|t| {
-                        parse_jwt_exp(t).is_some_and(|exp| {
-                            exp.duration_since(SystemTime::now())
-                                .is_ok_and(|d| d > Duration::from_secs(60))
-                        })
+                    && s.expires_at.is_some_and(|exp| {
+                        exp.duration_since(SystemTime::now())
+                            .is_ok_and(|d| d > Duration::from_secs(60))
                     });
                 if valid {
                     return s.access_token.clone();
@@ -182,11 +183,9 @@ impl SharedInfra {
             let session = self.database_session.lock().unwrap();
             if let Some(ref s) = *session {
                 let valid = !self.auth_invalidated.load(Ordering::Relaxed)
-                    && s.access_token.as_ref().is_some_and(|t| {
-                        parse_jwt_exp(t).is_some_and(|exp| {
-                            exp.duration_since(SystemTime::now())
-                                .is_ok_and(|d| d > Duration::from_secs(60))
-                        })
+                    && s.expires_at.is_some_and(|exp| {
+                        exp.duration_since(SystemTime::now())
+                            .is_ok_and(|d| d > Duration::from_secs(60))
                     });
                 if valid {
                     return s.access_token.clone();
@@ -220,7 +219,7 @@ impl SharedInfra {
             Ok(resp) => {
                 let status = resp.status().as_u16();
                 let text = resp.text().await.unwrap_or_default();
-                if status >= 400 {
+                if status == 401 {
                     *self.database_session.lock().unwrap() = None;
                     self.auth_invalidated.store(true, Ordering::Relaxed);
                     self.credential_store.clear_refresh_token();
@@ -228,6 +227,10 @@ impl SharedInfra {
                         cb();
                     }
                     return None;
+                }
+                if status >= 400 {
+                    let session = self.database_session.lock().unwrap();
+                    return session.as_ref().and_then(|s| s.access_token.clone());
                 }
 
                 let v: serde_json::Value = serde_json::from_str(&text).ok()?;
@@ -366,6 +369,9 @@ impl SharedInfra {
         };
 
         match result {
+            Ok(response) if !(200..300).contains(&response.status) => {
+                Err(crate::error::server_error(response.status, &response.body))
+            }
             Ok(response) => {
                 // On success: store in persistent cache, clear is_offline, store in memory cache
                 self.persistent_cache.put(&url, &response.body);

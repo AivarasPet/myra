@@ -30,6 +30,17 @@ AVD_DIR = $(HOME)/.android/avd/$(ANDROID_AVD_NAME).avd
 AVD_SERIAL = $$(for s in $$($(ADB) devices 2>/dev/null | awk '/^emulator-/ {print $$1}'); do if [ "$$($(ADB) -s $$s emu avd name 2>/dev/null | head -n1 | tr -d '\r')" = "$(ANDROID_AVD_NAME)" ]; then echo $$s; break; fi; done)
 PHYSICAL_SERIALS = $$($(ADB) devices 2>/dev/null | awk '$$2 == "device" && $$1 !~ /^emulator-/ {print $$1}')
 
+IOS_SIMULATOR_DEVICE_TYPE ?= iPhone 17 Pro
+IOS_SIMULATOR_RUNTIME ?= $$(xcrun simctl list runtimes -j | python3 -c 'import sys,json; rs=[r for r in json.load(sys.stdin)["runtimes"] if r["platform"]=="iOS" and r["isAvailable"]]; rs.sort(key=lambda r: [int(x) for x in r["version"].split(".")]); print(rs[-1]["identifier"] if rs else "")')
+# UDID of THIS worktree's simulator (empty if it does not exist yet); resolved by name like AVD_SERIAL.
+SIM_UDID = $$(xcrun simctl list devices -j | python3 -c 'import sys,json; ds=[d for v in json.load(sys.stdin)["devices"].values() for d in v if d["name"]=="$(IOS_SIMULATOR_NAME)" and d.get("isAvailable",True)]; print(ds[0]["udid"] if ds else "")')
+SIM_STATE = $$(xcrun simctl list devices -j | python3 -c 'import sys,json; ds=[d for v in json.load(sys.stdin)["devices"].values() for d in v if d["name"]=="$(IOS_SIMULATOR_NAME)"]; print(ds[0]["state"] if ds else "")')
+IOS_DIR = ios
+IOS_PROJECT = $(IOS_DIR)/Sverto.xcodeproj
+IOS_DERIVED = $(IOS_DIR)/build
+IOS_DEV_BUNDLE_ID = com.sverto.app.dev
+IOS_PROD_BUNDLE_ID = com.sverto.app
+
 # Default target
 .PHONY: help
 help: ## Show this help message
@@ -194,6 +205,10 @@ setup-env: ## Create .env file (worktree-aware). Use auth=noauth|database|clerk 
 		"# Android emulator" \
 		"ANDROID_AVD_NAME=$${AVD_NAME}" \
 		>> .env; \
+	printf '\n%s\n%s\n' \
+		"# iOS simulator" \
+		"IOS_SIMULATOR_NAME=$${AVD_NAME}" \
+		>> .env; \
 	printf '\n%s\n' "APP_ENV=dev" >> .env; \
 	echo "$(GREEN).env created (auth=$(auth), telemetry=$(telemetry), secrets=$(secrets)):$(NC)"; \
 	cat .env
@@ -266,6 +281,16 @@ status: ## Show service ports, status, and useful links
 			echo "$(YELLOW)Emulator      $(NC)  $(ANDROID_AVD_NAME) - $(RED)Not Running$(NC)"; \
 		fi; \
 	}; \
+	check_simulator() { \
+		UDID="$(SIM_UDID)"; STATE="$(SIM_STATE)"; \
+		if [ "$$STATE" = "Booted" ]; then \
+			echo "$(YELLOW)Simulator     $(NC)  $(IOS_SIMULATOR_NAME) ($$UDID) - $(GREEN)Running$(NC)"; \
+		elif [ -n "$$UDID" ]; then \
+			echo "$(YELLOW)Simulator     $(NC)  $(IOS_SIMULATOR_NAME) ($$UDID) - $(RED)Not Running$(NC)"; \
+		else \
+			echo "$(YELLOW)Simulator     $(NC)  $(IOS_SIMULATOR_NAME) - $(RED)Not Created$(NC)"; \
+		fi; \
+	}; \
 	check_infra "Postgres      " $(POSTGRES_PORT) database; \
 	check_local "API Server    " $(SERVER_PORT); \
 	check_worker; \
@@ -279,7 +304,8 @@ status: ## Show service ports, status, and useful links
 	check_infra "MinIO Console " $(MINIO_CONSOLE_PORT) minio; \
 	check_infra "Redis         " $(REDIS_PORT) redis; \
 	check_infra "Vault         " $(VAULT_PORT) vault; \
-	check_emulator
+	check_emulator; \
+	check_simulator
 
 # Run
 .PHONY: backend-run
@@ -411,6 +437,96 @@ android-bundle-prod: ## Build the prod release App Bundle (AAB) for Google Play 
 		-PSVERTO_KEY_ALIAS="$$SVERTO_KEY_ALIAS" \
 		-PSVERTO_KEY_PASSWORD="$$SVERTO_KEY_PASSWORD"
 	@echo "$(GREEN)AAB: android/app/build/outputs/bundle/prodRelease/app-prod-release.aab$(NC)"
+
+# iOS
+.PHONY: ios-core
+ios-core: ## Build the Rust core for the iOS simulator and package SvertoCoreFFI.xcframework + Swift bindings (variant=all adds the device slice; FORCE=1 rebuilds)
+	@$(IOS_DIR)/scripts/build-core.sh $(or $(variant),sim)
+
+.PHONY: ios-lucide
+ios-lucide: ## Generate the Lucide icon asset catalog used for server-provided category icons
+	@$(IOS_DIR)/scripts/make-lucide-assets.sh
+
+.PHONY: ios-project
+ios-project: ## Regenerate ios/Sverto.xcodeproj from ios/project.yml with xcodegen
+	@command -v xcodegen >/dev/null || { echo "$(RED)Error: xcodegen not installed (brew install xcodegen)$(NC)"; exit 1; }
+	@cd $(IOS_DIR) && xcodegen generate --quiet
+
+.PHONY: ios-simulator
+ios-simulator: ## Boot this worktree's iPhone simulator, creating it on first use. reset=true recreates it from scratch (wipes its data)
+	@test -n "$(IOS_SIMULATOR_NAME)" || { echo "$(RED)Error: IOS_SIMULATOR_NAME is not set. Run make setup-env first.$(NC)"; exit 1; }
+	@UDID="$(SIM_UDID)"; \
+	if [ "$(reset)" = "true" ] && [ -n "$$UDID" ]; then \
+		echo "$(YELLOW)Deleting $(IOS_SIMULATOR_NAME) ($$UDID) for reset...$(NC)"; \
+		xcrun simctl shutdown "$$UDID" >/dev/null 2>&1 || true; \
+		xcrun simctl delete "$$UDID"; \
+		UDID=""; \
+	fi; \
+	if [ -z "$$UDID" ]; then \
+		RUNTIME="$(IOS_SIMULATOR_RUNTIME)"; \
+		test -n "$$RUNTIME" || { echo "$(RED)Error: no iOS simulator runtime installed (Xcode > Settings > Components)$(NC)"; exit 1; }; \
+		echo "$(GREEN)Creating $(IOS_SIMULATOR_NAME) ($(IOS_SIMULATOR_DEVICE_TYPE), $$RUNTIME)...$(NC)"; \
+		UDID=$$(xcrun simctl create "$(IOS_SIMULATOR_NAME)" "$(IOS_SIMULATOR_DEVICE_TYPE)" "$$RUNTIME"); \
+	fi; \
+	if [ "$(SIM_STATE)" != "Booted" ]; then \
+		echo "$(GREEN)Booting $(IOS_SIMULATOR_NAME)...$(NC)"; \
+		xcrun simctl boot "$$UDID"; \
+	fi; \
+	xcrun simctl bootstatus "$$UDID" -b >/dev/null; \
+	open -g -a Simulator --args -CurrentDeviceUDID "$$UDID"; \
+	echo "$(GREEN)$(IOS_SIMULATOR_NAME) ready ($$UDID)$(NC)"
+
+.PHONY: ios-run
+ios-run: ios-simulator ios-core ios-lucide ## Build, install, and launch the dev iOS app on this worktree's simulator (boots it if needed)
+	@$(IOS_DIR)/scripts/write-generated-xcconfig.sh
+	@if [ ! -d "$(IOS_PROJECT)" ] || [ "$(IOS_DIR)/project.yml" -nt "$(IOS_PROJECT)/project.pbxproj" ]; then $(MAKE) ios-project; fi
+	@UDID="$(SIM_UDID)"; \
+	set -o pipefail; \
+	xcodebuild -project $(IOS_PROJECT) -scheme Sverto -configuration Debug \
+		-destination "platform=iOS Simulator,id=$$UDID" -derivedDataPath $(IOS_DERIVED) \
+		-quiet build && \
+	APP=$$(find $(IOS_DERIVED)/Build/Products/Debug-iphonesimulator -maxdepth 1 -name 'Sverto.app' | head -n1) && \
+	xcrun simctl install "$$UDID" "$$APP" && \
+	echo "$(GREEN)Launching $(IOS_DEV_BUNDLE_ID) on $(IOS_SIMULATOR_NAME)$(NC)" && \
+	xcrun simctl launch "$$UDID" $(IOS_DEV_BUNDLE_ID) >/dev/null
+
+.PHONY: ios-install-prod
+ios-install-prod: ios-simulator ios-lucide ## Build and install the prod iOS app (points at api.sverto.com) on this worktree's simulator and any connected iPhone. Needs .secrets.prod with CLERK_PUBLISHABLE_KEY and IOS_TEAM_ID
+	@if [ ! -f ".secrets.prod" ]; then echo "$(RED)Error: .secrets.prod not found.$(NC)"; exit 1; fi
+	@. ./.secrets.prod; \
+	test -n "$$IOS_TEAM_ID" || { echo "$(RED)Error: IOS_TEAM_ID missing from .secrets.prod$(NC)"; exit 1; }; \
+	$(IOS_DIR)/scripts/build-core.sh all && \
+	APP_API_BASE_URL=https://api.sverto.com CLERK_PUBLISHABLE_KEY="$$CLERK_PUBLISHABLE_KEY" IOS_TEAM_ID="$$IOS_TEAM_ID" $(IOS_DIR)/scripts/write-generated-xcconfig.sh && \
+	$(MAKE) ios-project && \
+	UDID="$(SIM_UDID)"; \
+	set -o pipefail; \
+	xcodebuild -project $(IOS_PROJECT) -scheme Sverto -configuration Release \
+		-destination "platform=iOS Simulator,id=$$UDID" -derivedDataPath $(IOS_DERIVED) -quiet build && \
+	APP=$$(find $(IOS_DERIVED)/Build/Products/Release-iphonesimulator -maxdepth 1 -name 'Sverto.app' | head -n1) && \
+	xcrun simctl install "$$UDID" "$$APP" && xcrun simctl launch "$$UDID" $(IOS_PROD_BUNDLE_ID) >/dev/null && \
+	DEVICES=$$(xcrun devicectl list devices -j /dev/stdout 2>/dev/null | python3 -c 'import sys,json; print(" ".join(d["identifier"] for d in json.load(sys.stdin)["result"]["devices"] if d.get("connectionProperties",{}).get("tunnelState")=="connected"))' 2>/dev/null); \
+	if [ -n "$$DEVICES" ]; then \
+		xcodebuild -project $(IOS_PROJECT) -scheme Sverto -configuration Release -destination 'generic/platform=iOS' \
+			-derivedDataPath $(IOS_DERIVED) -allowProvisioningUpdates -quiet build && \
+		DEVAPP=$$(find $(IOS_DERIVED)/Build/Products/Release-iphoneos -maxdepth 1 -name 'Sverto.app' | head -n1) && \
+		for d in $$DEVICES; do echo "$(GREEN)Installing on device $$d$(NC)"; xcrun devicectl device install app --device "$$d" "$$DEVAPP" && xcrun devicectl device process launch --device "$$d" $(IOS_PROD_BUNDLE_ID); done; \
+	fi
+
+.PHONY: ios-archive-prod
+ios-archive-prod: ios-lucide ## Archive the prod iOS app and export an App Store Connect IPA (ios/build/Sverto.xcarchive, ios/build/export/Sverto.ipa). Needs .secrets.prod with CLERK_PUBLISHABLE_KEY and IOS_TEAM_ID
+	@if [ ! -f ".secrets.prod" ]; then echo "$(RED)Error: .secrets.prod not found.$(NC)"; exit 1; fi
+	@. ./.secrets.prod; \
+	test -n "$$IOS_TEAM_ID" || { echo "$(RED)Error: IOS_TEAM_ID missing from .secrets.prod$(NC)"; exit 1; }; \
+	$(IOS_DIR)/scripts/build-core.sh all && \
+	APP_API_BASE_URL=https://api.sverto.com CLERK_PUBLISHABLE_KEY="$$CLERK_PUBLISHABLE_KEY" IOS_TEAM_ID="$$IOS_TEAM_ID" $(IOS_DIR)/scripts/write-generated-xcconfig.sh && \
+	$(MAKE) ios-project && \
+	xcodebuild -project $(IOS_PROJECT) -scheme Sverto -configuration Release -destination 'generic/platform=iOS' \
+		-derivedDataPath $(IOS_DERIVED) -archivePath $(IOS_DERIVED)/Sverto.xcarchive -allowProvisioningUpdates -quiet archive && \
+	sed "s/IOS_TEAM_ID/$$IOS_TEAM_ID/" $(IOS_DIR)/Config/ExportOptions.plist > $(IOS_DERIVED)/ExportOptions.plist && \
+	xcodebuild -exportArchive -archivePath $(IOS_DERIVED)/Sverto.xcarchive -exportOptionsPlist $(IOS_DERIVED)/ExportOptions.plist \
+		-exportPath $(IOS_DERIVED)/export -allowProvisioningUpdates -quiet
+	@echo "$(GREEN)Archive: $(IOS_DERIVED)/Sverto.xcarchive$(NC)"
+	@echo "$(GREEN)IPA: $(IOS_DERIVED)/export/Sverto.ipa$(NC)"
 
 # Infrastructure
 .PHONY: start-infra

@@ -231,15 +231,10 @@ pub async fn post_refresh_token(
         .or_else(|| body.map(|b| b.0.refresh_token))
         .ok_or(ApiError::Unauthorized)?;
 
-    let (user_id, new_raw_token, new_expires_at) = auth_service
+    let (access_token, new_raw_token, new_expires_at) = auth_service
         .validate_and_rotate(&raw_token)
         .await
-        .map_err(|_| ApiError::Unauthorized)?;
-
-    let access_token = auth_service
-        .issue_access_token(user_id)
-        .await
-        .map_err(ApiError::Internal)?;
+        .map_err(ApiError::from_anyhow)?;
 
     let mut response_headers = HeaderMap::new();
     let return_model = if from_body {

@@ -66,12 +66,14 @@ import com.clerk.api.Clerk
 import com.sverto.app.BuildConfig
 import com.sverto.app.SvertoApp
 import com.sverto.app.core.SvertoViewModelFactory
+import com.sverto.app.core.ai.CategorySuggestionConsent
 import com.sverto.app.core.icons.LucideIcon
 import com.sverto.app.core.theme.LocalClerkTheme
 import com.sverto.app.feature.assets.components.CurrencyPickerSheet
 import com.sverto.app.feature.server.AppSessionViewModel
 import com.sverto.app.feature.server.ServerOrigin
 import com.sverto.app.feature.server.ServerSettingsSheet
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -102,11 +104,16 @@ fun SettingsScreen(
     exportsViewModel: ExportsViewModel = viewModel(factory = SvertoViewModelFactory),
 ) {
     val context = LocalContext.current
-    val appStore = remember { (context.applicationContext as SvertoApp).appStore }
+    val app = remember { context.applicationContext as SvertoApp }
+    val appStore = app.appStore
+    val categorySuggester = app.categorySuggester
+    val categorySuggestionSettings by categorySuggester.settings.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     var showCurrencyPicker by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf(false) }
+    var deleteError by remember { mutableStateOf<String?>(null) }
+    var showCategorySuggestionSettings by remember { mutableStateOf(false) }
     var showServerSettings by remember { mutableStateOf(false) }
     var baseCurrencyId by remember { mutableStateOf(appStore.getCachedMe()?.defaultAsset?.id) }
     var baseCurrencyTicker by remember { mutableStateOf<String?>(null) }
@@ -196,6 +203,17 @@ fun SettingsScreen(
                     onClick = onCustomCategories,
                 )
                 SettingsRow(
+                    icon = "sparkles",
+                    label = "Category suggestions",
+                    supporting =
+                        when (categorySuggestionSettings.consent) {
+                            CategorySuggestionConsent.LOADING -> "Loading preference…"
+                            CategorySuggestionConsent.DISABLED -> "Off · On this device"
+                            CategorySuggestionConsent.ENABLED -> "On · Google ML Kit"
+                        },
+                    onClick = { showCategorySuggestionSettings = true },
+                )
+                SettingsRow(
                     icon = "coins",
                     label = "Custom Assets",
                     onClick = onCustomAssets,
@@ -240,7 +258,10 @@ fun SettingsScreen(
                 if (authMode != AuthMode.NOAUTH) {
                     DeleteAccountRow(
                         enabled = !deleting,
-                        onClick = { showDeleteConfirm = true },
+                        onClick = {
+                            deleteError = null
+                            showDeleteConfirm = true
+                        },
                     )
                 }
             }
@@ -264,18 +285,21 @@ fun SettingsScreen(
                 onDismissExports = { showExportsSheet = false },
                 showDeleteConfirm = showDeleteConfirm,
                 deleting = deleting,
+                deleteError = deleteError,
                 onConfirmDelete = {
                     deleteUserAndSignOut(
                         scope,
                         appStore,
                         sessionViewModel,
-                        isClerk,
-                        { deleting = true },
+                        { busy ->
+                            deleting = busy
+                            if (busy) deleteError = null
+                        },
                         {
-                            deleting = false
                             showDeleteConfirm = false
                             onBack()
                         },
+                        { message -> deleteError = message },
                     )
                 },
                 onDismissDelete = { showDeleteConfirm = false },
@@ -290,6 +314,12 @@ fun SettingsScreen(
                 },
                 onDismissServer = { showServerSettings = false },
             )
+            if (showCategorySuggestionSettings) {
+                CategorySuggestionSettingsDialog(
+                    categorySuggester = categorySuggester,
+                    onDismiss = { showCategorySuggestionSettings = false },
+                )
+            }
         }
     }
 }
@@ -697,21 +727,28 @@ private fun deleteUserAndSignOut(
     scope: CoroutineScope,
     appStore: AppStore,
     sessionViewModel: AppSessionViewModel?,
-    isClerk: Boolean,
-    onStarted: () -> Unit,
+    onDeletingChanged: (Boolean) -> Unit,
     onFinished: () -> Unit,
+    onFailed: (String) -> Unit,
 ) {
     scope.launch {
-        onStarted()
-        runCatching {
-            withContext(Dispatchers.IO) { appStore.deleteUser() }
-        }
-        if (isClerk) {
-            Clerk.auth.signOut()
-        } else {
+        onDeletingChanged(true)
+        try {
+            try {
+                withContext(Dispatchers.IO) { appStore.deleteUser() }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (
+                @Suppress("TooGenericExceptionCaught") e: Exception,
+            ) {
+                onFailed(e.message ?: "Could not delete your account. Please try again.")
+                return@launch
+            }
             sessionViewModel?.signOut()
+            onFinished()
+        } finally {
+            onDeletingChanged(false)
         }
-        onFinished()
     }
 }
 
@@ -725,6 +762,7 @@ private fun AuthMode.label(): String =
 @Composable
 private fun DeleteAccountDialog(
     deleting: Boolean,
+    error: String?,
     onDismiss: () -> Unit,
     onConfirm: () -> Unit,
 ) {
@@ -732,12 +770,15 @@ private fun DeleteAccountDialog(
         onDismissRequest = { if (!deleting) onDismiss() },
         title = { Text("Delete account") },
         text = {
-            Text(
-                "This permanently erases your account and all of your data — " +
-                    "accounts, transactions, custom assets and their history, your own " +
-                    "categories, AI chats, connections and uploaded files. Shared assets, " +
-                    "exchange rates and seeded categories are untouched. This cannot be undone.",
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Text(
+                    "This deletes your Sverto account and its financial records, chats and connections. " +
+                        "You will be signed out. We also request deletion of uploaded files and sign-in data; " +
+                        "logs and backups follow the privacy policy. Shared assets, exchange rates and seeded " +
+                        "categories are untouched. This cannot be undone.",
+                )
+                error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            }
         },
         confirmButton = {
             TextButton(
@@ -773,6 +814,7 @@ private fun SettingsOverlays(
     onDismissExports: () -> Unit,
     showDeleteConfirm: Boolean,
     deleting: Boolean,
+    deleteError: String?,
     onConfirmDelete: () -> Unit,
     onDismissDelete: () -> Unit,
     showServerSettings: Boolean,
@@ -802,6 +844,7 @@ private fun SettingsOverlays(
     if (showDeleteConfirm) {
         DeleteAccountDialog(
             deleting = deleting,
+            error = deleteError,
             onDismiss = onDismissDelete,
             onConfirm = onConfirmDelete,
         )

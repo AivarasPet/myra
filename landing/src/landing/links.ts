@@ -4,7 +4,6 @@ export const LANDING_LICENCE_URL =
 
 export interface LandingLink {
   readonly label: string
-  /** An in-page anchor, an absolute URL, or null when the destination does not exist yet. */
   readonly target: string | null
 }
 
@@ -14,11 +13,11 @@ export interface LandingNavItem {
 }
 
 export const LANDING_NAV: readonly LandingNavItem[] = [
-  { label: "How it works", target: "#how-it-works" },
-  { label: "Investing", target: "#investing" },
-  { label: "Myra", target: "#myra" },
-  { label: "Self-hosting", target: "#self-hosting" },
-  { label: "Pricing", target: "#pricing" },
+  { label: "How it works", target: "/#how-it-works" },
+  { label: "Investing", target: "/#investing" },
+  { label: "Myra", target: "/#myra" },
+  { label: "Self-hosting", target: "/#self-hosting" },
+  { label: "Pricing", target: "/#pricing" },
   { label: "Docs", target: LANDING_SOURCE_URL },
 ]
 
@@ -31,10 +30,10 @@ export const LANDING_FOOTER_GROUPS: readonly LandingFooterGroup[] = [
   {
     title: "Product",
     links: [
-      { label: "How it works", target: "#how-it-works" },
-      { label: "Investing", target: "#investing" },
-      { label: "Myra", target: "#myra" },
-      { label: "Pricing", target: "#pricing" },
+      { label: "How it works", target: "/#how-it-works" },
+      { label: "Investing", target: "/#investing" },
+      { label: "Myra", target: "/#myra" },
+      { label: "Pricing", target: "/#pricing" },
       { label: "Demo ledger", target: null },
     ],
   },
@@ -55,7 +54,7 @@ export const LANDING_FOOTER_GROUPS: readonly LandingFooterGroup[] = [
       { label: "API reference", target: null },
       { label: "Status", target: null },
       { label: "Contact", target: null },
-      { label: "Privacy", target: null },
+      { label: "Privacy", target: "/privacy" },
     ],
   },
 ]

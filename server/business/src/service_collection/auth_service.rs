@@ -16,6 +16,9 @@ use crate::dtos::{auth_dto::ClaimsDto, user_role_dto::UserRoleEnumDto};
 #[cfg(feature = "database")]
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
 
+#[cfg(feature = "database")]
+use crate::dtos::refresh_token_error_dto::RefreshTokenError;
+
 #[cfg(any(feature = "database", feature = "clerk"))]
 use super::user_service::UsersService;
 
@@ -102,7 +105,6 @@ impl AuthService {
         &self,
         user_id: uuid::Uuid,
     ) -> anyhow::Result<(String, time::OffsetDateTime)> {
-        // Clean up expired tokens as a side-effect
         let cleanup_query = user_queries::delete_expired_refresh_tokens();
         self.db_context.execute(cleanup_query).await?;
 
@@ -120,7 +122,7 @@ impl AuthService {
     pub async fn validate_and_rotate(
         &self,
         raw_token: &str,
-    ) -> anyhow::Result<(uuid::Uuid, String, time::OffsetDateTime)> {
+    ) -> anyhow::Result<(String, String, time::OffsetDateTime)> {
         let token_hash = Self::hash_token(raw_token);
 
         let query = user_queries::get_refresh_token_by_hash(token_hash);
@@ -128,23 +130,24 @@ impl AuthService {
             .db_context
             .fetch_optional::<RefreshTokenModel>(query)
             .await?
-            .ok_or_else(|| anyhow::anyhow!("Invalid refresh token"))?;
+            .ok_or(RefreshTokenError::Invalid)?;
 
-        // Check expiry
         if stored.expires_at < time::OffsetDateTime::now_utc() {
-            // Delete the expired token
             let del_query = user_queries::delete_refresh_token_by_id(stored.id);
             self.db_context.execute(del_query).await?;
-            return Err(anyhow::anyhow!("Refresh token expired"));
+            return Err(RefreshTokenError::Expired.into());
         }
 
-        // Rotate: delete old, create new
+        let access_token = self.issue_access_token(stored.user_id).await?;
+
+        self.db_context.start_transaction().await?;
         let del_query = user_queries::delete_refresh_token_by_id(stored.id);
         self.db_context.execute(del_query).await?;
 
         let (new_raw_token, new_expires_at) = self.create_refresh_token(stored.user_id).await?;
+        self.db_context.commit_transaction().await?;
 
-        Ok((stored.user_id, new_raw_token, new_expires_at))
+        Ok((access_token, new_raw_token, new_expires_at))
     }
 
     #[tracing::instrument(level = "debug", skip_all, fields(user_id = %user_id))]
@@ -155,7 +158,7 @@ impl AuthService {
     }
 
     #[tracing::instrument(level = "debug", skip_all, fields(user_id = %user_id))]
-    pub async fn issue_access_token(&self, user_id: uuid::Uuid) -> anyhow::Result<String> {
+    async fn issue_access_token(&self, user_id: uuid::Uuid) -> anyhow::Result<String> {
         let user = self.user_service.get_full_user(user_id).await?;
         let my_claims = ClaimsDto {
             sub: user.id,
@@ -168,7 +171,6 @@ impl AuthService {
     }
 }
 
-// ===== CLERK FEATURE =====
 #[cfg(feature = "clerk")]
 use std::collections::HashMap;
 #[cfg(feature = "clerk")]
@@ -195,7 +197,6 @@ pub struct AuthService {
     user_service: UsersService,
     clerk_secret_key: String,
     jwks_cache: Arc<RwLock<Option<CachedJwks>>>,
-    /// Cache of clerk_user_id → (internal_user_id, username, fetched_at)
     identity_cache: Arc<RwLock<HashMap<String, CachedIdentity>>>,
 }
 
@@ -215,7 +216,6 @@ impl AuthService {
         }
     }
 
-    /// Fetch JWKS from cache or Clerk API (TTL: 5 minutes).
     async fn get_jwks(&self) -> anyhow::Result<serde_json::Value> {
         {
             let cache = self.jwks_cache.read().await;
@@ -234,7 +234,6 @@ impl AuthService {
         Ok(keys)
     }
 
-    /// Fetch JWKS directly from Clerk's API.
     async fn fetch_jwks_from_clerk(&self) -> anyhow::Result<serde_json::Value> {
         let client = reqwest::Client::new();
         let jwks_response = client
@@ -257,8 +256,6 @@ impl AuthService {
             .map_err(|e| anyhow::anyhow!("Failed to parse Clerk JWKS: {}", e))
     }
 
-    /// Resolve a Clerk user ID to an internal (UUID, username) pair, using in-memory cache.
-    /// On cache miss, queries the DB; on DB miss, auto-provisions a new user.
     async fn resolve_internal_user(&self, clerk_user_id: &str) -> anyhow::Result<(Uuid, String)> {
         {
             let cache = self.identity_cache.read().await;
@@ -317,25 +314,18 @@ impl AuthService {
         Ok(result)
     }
 
-    /// Verifies a Clerk JWT by fetching Clerk's JWKS (cached) and validating the token.
-    /// Returns ClaimsDto with the internal user_id (resolved via external_identity_mappings, cached).
-    /// On first login, auto-provisions an internal user record.
     #[tracing::instrument(level = "debug", skip_all)]
     pub async fn verify_clerk_token(&self, token: String) -> anyhow::Result<ClaimsDto> {
         use jsonwebtoken::{Algorithm, DecodingKey};
 
-        // 1. Get JWKS (from cache or Clerk API)
         let jwks = self.get_jwks().await?;
 
-        // 2. Extract the matching RSA key from JWKS by kid
         let keys = jwks["keys"]
             .as_array()
             .ok_or_else(|| anyhow::anyhow!("Invalid JWKS format"))?;
 
         // Clerk added non-string fields (oiat) to JWT headers, which breaks
         // jsonwebtoken::decode_header()'s HashMap<String, String> extras.
-        // let header = jsonwebtoken::decode_header(&token)
-        //     .map_err(|e| anyhow::anyhow!("Failed to decode JWT header: {}", e))?;
         use base64::Engine;
         let header_json: serde_json::Value = {
             let segment = token
@@ -369,21 +359,19 @@ impl AuthService {
         )
         .map_err(|e| anyhow::anyhow!("Failed to create decoding key: {}", e))?;
 
-        // 3. Verify signature manually (decode() also chokes on the oiat header)
         let parts: Vec<&str> = token.splitn(4, '.').collect();
-        if parts.len() < 3 {
+        if parts.len() != 3 {
             return Err(anyhow::anyhow!("Invalid JWT: expected 3 segments"));
         }
         let message = format!("{}.{}", parts[0], parts[1]);
-        // let token_data = decode::<serde_json::Value>(&token, &decoding_key, &validation)
-        //     .map_err(|e| anyhow::anyhow!("Failed to validate Clerk token: {}", e))?;
-        jsonwebtoken::crypto::verify(
+        let signature_valid = jsonwebtoken::crypto::verify(
             parts[2],
             message.as_bytes(),
             &decoding_key,
             Algorithm::RS256,
         )
         .map_err(|e| anyhow::anyhow!("Clerk token signature verification failed: {}", e))?;
+        anyhow::ensure!(signature_valid, "Clerk token signature verification failed");
 
         let payload_bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
             .decode(parts[1])
@@ -400,13 +388,11 @@ impl AuthService {
             return Err(anyhow::anyhow!("Clerk token expired"));
         }
 
-        // 4. Extract clerk_user_id from "sub" claim
         let clerk_user_id = claims["sub"]
             .as_str()
             .ok_or_else(|| anyhow::anyhow!("Missing 'sub' claim in Clerk token"))?
             .to_string();
 
-        // 5. Extract admin status from public_metadata.role
         let role = claims
             .get("public_metadata")
             .and_then(|m| m.get("role"))
@@ -414,7 +400,6 @@ impl AuthService {
             .unwrap_or("User");
         let user_role = UserRoleEnumDto::from_str(role).unwrap_or(UserRoleEnumDto::User);
 
-        // 6. Resolve internal user (from cache or DB, with auto-provisioning)
         let (internal_user_id, username) = self.resolve_internal_user(&clerk_user_id).await?;
 
         Ok(ClaimsDto {

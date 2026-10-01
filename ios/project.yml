@@ -1,0 +1,117 @@
+name: Sverto
+options:
+  bundleIdPrefix: com.sverto
+  deploymentTarget:
+    iOS: "26.0"
+  xcodeVersion: "26.0"
+  createIntermediateGroups: true
+  generateEmptyDirectories: true
+  defaultConfig: Debug
+  groupSortPosition: top
+configs:
+  Debug: debug
+  Release: release
+configFiles:
+  Debug: Config/Dev.xcconfig
+  Release: Config/Prod.xcconfig
+packages:
+  SvertoCore:
+    path: SvertoCore
+  Clerk:
+    url: https://github.com/clerk/clerk-ios
+    from: 1.5.2
+  MarkdownUI:
+    url: https://github.com/gonzalezreal/swift-markdown-ui
+    from: 2.4.1
+targets:
+  Sverto:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sverto
+        type: syncedFolder
+    configFiles:
+      Debug: Config/Dev.xcconfig
+      Release: Config/Prod.xcconfig
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: NO
+        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks"
+    dependencies:
+      - package: SvertoCore
+        product: SvertoCore
+      - package: Clerk
+        product: ClerkKit
+      - package: Clerk
+        product: ClerkKitUI
+      - package: MarkdownUI
+        product: MarkdownUI
+      - target: SvertoShare
+    entitlements:
+      path: Sverto/Sverto.entitlements
+      properties:
+        com.apple.security.application-groups: [$(APP_GROUP_IDENTIFIER)]
+    preBuildScripts:
+      - name: Build Rust core
+        script: |
+          if [ "${SVERTO_SKIP_CORE_BUILD:-0}" = "1" ]; then exit 0; fi
+          if [ "$PLATFORM_NAME" = "iphonesimulator" ]; then VARIANT=sim; else VARIANT=all; fi
+          "$SRCROOT/scripts/build-core.sh" "$VARIANT"
+          "$SRCROOT/scripts/make-lucide-assets.sh"
+        basedOnDependencyAnalysis: false
+  SvertoShare:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: SvertoShare
+        type: syncedFolder
+    configFiles:
+      Debug: Config/Dev.xcconfig
+      Release: Config/Prod.xcconfig
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: Config/Share-Info.plist
+        PRODUCT_BUNDLE_IDENTIFIER: $(SHARE_BUNDLE_IDENTIFIER)
+        PRODUCT_NAME: SvertoShare
+        PRODUCT_MODULE_NAME: SvertoShare
+        APPLICATION_EXTENSION_API_ONLY: YES
+    entitlements:
+      path: SvertoShare/SvertoShare.entitlements
+      properties:
+        com.apple.security.application-groups: [$(APP_GROUP_IDENTIFIER)]
+  SvertoTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: SvertoTests
+        type: syncedFolder
+    dependencies:
+      - target: Sverto
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_FILE: ""
+        PRODUCT_NAME: SvertoTests
+        PRODUCT_BUNDLE_IDENTIFIER: com.sverto.app.tests
+        PRODUCT_MODULE_NAME: SvertoTests
+        SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor
+        SWIFT_APPROACHABLE_CONCURRENCY: YES
+schemes:
+  Sverto:
+    build:
+      targets:
+        Sverto: all
+        SvertoTests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - SvertoTests
+    profile:
+      config: Release
+    analyze:
+      config: Debug
+    archive:
+      config: Release

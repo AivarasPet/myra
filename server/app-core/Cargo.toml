@@ -11,6 +11,10 @@ name = "sverto_core"
 name = "uniffi-bindgen"
 path = "src/bin/uniffi-bindgen.rs"
 
+[[bin]]
+name = "uniffi-bindgen-swift"
+path = "src/bin/uniffi-bindgen-swift.rs"
+
 [dependencies]
 uniffi = { version = "0.31", features = ["cli", "tokio"] }
 async-trait = "0.1"
@@ -34,6 +38,9 @@ base64 = "0.22"
 
 [target.'cfg(target_os = "android")'.dependencies]
 tracing-android = "0.2"
+
+[target.'cfg(target_os = "ios")'.dependencies]
+tracing-oslog = "0.3"
 
 [build-dependencies]
 uniffi = { version = "0.31", features = ["build"] }

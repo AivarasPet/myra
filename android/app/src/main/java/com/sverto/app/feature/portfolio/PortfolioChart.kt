@@ -2,11 +2,12 @@ package com.sverto.app.feature.portfolio
 
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -21,13 +22,18 @@ import androidx.compose.material3.ToggleButton
 import androidx.compose.material3.ToggleButtonDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -35,6 +41,8 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
@@ -44,7 +52,6 @@ import com.sverto.app.core.Money
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import kotlin.math.roundToInt
 
 data class ChartPoint(
     val date: Long,
@@ -76,36 +83,27 @@ fun PortfolioChart(
 ) {
     var internalPeriod by remember { mutableStateOf(TimePeriod.MONTH) }
     val activePeriod = selectedPeriod ?: internalPeriod
-    val points = portfolioData[activePeriod] ?: emptyList()
+    val periodPoints = portfolioData[activePeriod] ?: emptyList()
+    val points = remember(periodPoints) { periodPoints.associateBy { it.date }.values.sortedBy { it.date } }
 
-    // Scrub state: null = show latest, 0..1 = normalized position
-    var scrubPosition by remember { mutableStateOf<Float?>(null) }
-
-    val scrubIdx =
-        if (scrubPosition != null && points.isNotEmpty()) {
-            (scrubPosition!! * (points.size - 1)).roundToInt().coerceIn(0, points.size - 1)
-        } else {
-            null
+    val scrubPosition = remember(activePeriod) { mutableStateOf<Float?>(null) }
+    val scrubIdx by remember(points, scrubPosition) {
+        derivedStateOf {
+            scrubPosition.value?.let { nearestChartPointIndex(points, it) }
         }
+    }
+    val dateFormat = remember(activePeriod) {
+        SimpleDateFormat(if (activePeriod == TimePeriod.DAY) "MMM d, h:mm a" else "MMM d, yyyy", Locale.US)
+    }
 
-    val currentValue = if (scrubIdx != null) points[scrubIdx].value else points.lastOrNull()?.value ?: 0.0
+    val scrubbedPoint = scrubIdx?.let { points[it] }
+    val currentValue = scrubbedPoint?.value ?: points.lastOrNull()?.value ?: 0.0
     val startValue = points.firstOrNull()?.value ?: 0.0
     val changeAmount = currentValue - startValue
     val changePercent = if (startValue != 0.0) (changeAmount / startValue) * 100 else 0.0
     val isPositive = changeAmount >= 0
 
-    val scrubDate =
-        if (scrubIdx != null) {
-            val dateFormat =
-                if (activePeriod == TimePeriod.DAY) {
-                    SimpleDateFormat("MMM d, h:mm a", Locale.US)
-                } else {
-                    SimpleDateFormat("MMM d, yyyy", Locale.US)
-                }
-            dateFormat.format(Date(points[scrubIdx].date * 1000))
-        } else {
-            null
-        }
+    val scrubDate = scrubbedPoint?.let { dateFormat.format(Date(it.date * 1000)) }
 
     val lineColor =
         if (isPositive) {
@@ -126,30 +124,20 @@ fun PortfolioChart(
             MaterialTheme.colorScheme.error
         }
 
-    // Animate line drawing on period change.
-    // `remember(selectedPeriod)` creates a fresh Animatable at 0f synchronously in the same
-    // composition that receives the new `points`, so the canvas never renders one full frame of
-    // new data before the sweep starts.
+    // Reset in composition so a new period never flashes its complete path before the reveal.
     val animationProgress = remember(activePeriod) { Animatable(0f) }
     LaunchedEffect(activePeriod) {
         animationProgress.animateTo(1f, animationSpec = tween(600))
     }
 
-    // No card: the chart is the screen's primary content, so it sits flush on the background
-    // (Fitbit / M3 hero-content pattern) instead of being boxed in a same-colour, invisible
-    // container. Callers supply the 16dp horizontal margin.
     Column(modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier.fillMaxWidth(),
-            // Top-align the trailing slot with the headline value line (not the centre of the
-            // three-line block — the reserved scrub-date line would drag it visually downward).
             verticalAlignment = Alignment.Top,
         ) {
             Column(Modifier.weight(1f)) {
-                Text(
+                ChartHeadlineValue(
                     text = Money.format(currentValue, currencyTicker),
-                    style = MaterialTheme.typography.headlineLarge,
-                    modifier = Modifier.animateContentSize(),
                 )
                 val changeText = Money.format(changeAmount, currencyTicker, signed = true)
                 val pctText = String.format(Locale.US, "%.2f", changePercent)
@@ -159,8 +147,7 @@ fun PortfolioChart(
                     style = MaterialTheme.typography.bodyMedium,
                     color = changeColor,
                 )
-                // Scrub date — always render a single line (a blank placeholder when not scrubbing) so it
-                // reserves its height and the chart doesn't jump down when the date appears on press.
+                // Reserve the date line so pressing the chart does not move the plot.
                 Text(
                     text = scrubDate ?: " ",
                     style = MaterialTheme.typography.bodySmall,
@@ -177,40 +164,31 @@ fun PortfolioChart(
         }
         Spacer(Modifier.height(16.dp))
 
-        // Chart
-        PortfolioLineCanvas(
-            points = points.map { it.value },
-            progress = animationProgress.value,
-            scrubPosition = scrubPosition,
-            lineColor = lineColor,
-            fillColor = fillColor,
-            onScrub = { scrubPosition = it },
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .height(180.dp),
-        )
+        key(activePeriod) {
+            PortfolioLineCanvas(
+                points = points,
+                progress = animationProgress.asState(),
+                scrubPosition = scrubPosition,
+                lineColor = lineColor,
+                fillColor = fillColor,
+                onScrub = { scrubPosition.value = it },
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .height(180.dp),
+            )
+        }
 
         Spacer(Modifier.height(16.dp))
 
-        // Time period selector — M3 Expressive connected button group.
-        // Google deprecated segmented buttons in favour of this: ToggleButtons sit in a Row with
-        // ConnectedSpaceBetween and position-aware shapes, so the segments read as one cohesive
-        // control (rounded outer corners, squared inner corners) spanning the full width — rather
-        // than separate floating pills.
         Row(
             horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween),
             modifier = Modifier.fillMaxWidth(),
         ) {
             val periods = TimePeriod.entries
-            // Hoisted out of the loop: the chart recomposes on every scrub frame, so build the
-            // segment shapes/colors/padding once rather than per segment per frame.
             val leadingShapes = ButtonGroupDefaults.connectedLeadingButtonShapes()
             val middleShapes = ButtonGroupDefaults.connectedMiddleButtonShapes()
             val trailingShapes = ButtonGroupDefaults.connectedTrailingButtonShapes()
-            // Unselected segments default to surfaceContainer, which matches the screen background
-            // and disappears; bump them to surfaceContainerHigh so the connected track is visible.
-            // Selected segment keeps the default Primary fill.
             val periodColors =
                 ToggleButtonDefaults.toggleButtonColors(
                     containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -225,7 +203,7 @@ fun PortfolioChart(
                         } else {
                             internalPeriod = period
                         }
-                        scrubPosition = null
+                        scrubPosition.value = null
                     },
                     modifier =
                         Modifier
@@ -247,121 +225,184 @@ fun PortfolioChart(
     }
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun ChartHeadlineValue(text: String) {
+    var lastText by remember { mutableStateOf(text) }
+    val displacement = remember { Animatable(0f) }
+    val spatialSpec = MaterialTheme.motionScheme.fastSpatialSpec<Float>()
+
+    LaunchedEffect(text) {
+        if (text == lastText) return@LaunchedEffect
+        lastText = text
+        displacement.snapTo(1f)
+        displacement.animateTo(0f, spatialSpec)
+    }
+
+    Text(
+        text = text,
+        style = MaterialTheme.typography.headlineLarge,
+        modifier = Modifier
+            .animateContentSize(MaterialTheme.motionScheme.fastSpatialSpec())
+            .graphicsLayer { translationY = 2.dp.toPx() * displacement.value },
+    )
+}
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun PortfolioLineCanvas(
-    points: List<Double>,
-    progress: Float,
-    scrubPosition: Float?,
+    points: List<ChartPoint>,
+    progress: State<Float>,
+    scrubPosition: State<Float?>,
     lineColor: Color,
     fillColor: Color,
     onScrub: (Float?) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val scrubDotColor = lineColor
-    val scrubLineColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
+    val currentOnScrub by rememberUpdatedState(onScrub)
+    val currentLineColor = rememberUpdatedState(lineColor)
+    val currentFillColor = rememberUpdatedState(fillColor)
+    val scrubLineColor = rememberUpdatedState(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f))
+    val lastScrubPosition = remember { mutableFloatStateOf(0f) }
+    val isDragging = remember { mutableStateOf(false) }
+    val isScrubbing by remember(scrubPosition) { derivedStateOf { scrubPosition.value != null } }
+    val scrubOpacity = animateFloatAsState(
+        targetValue = if (isScrubbing) 1f else 0f,
+        animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
+        label = "chart_selection_opacity",
+    )
+    val scrubScale = animateFloatAsState(
+        targetValue = if (isScrubbing) 1f else 0.7f,
+        animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(),
+        label = "chart_selection_scale",
+    )
+    val updateScrub = remember {
+        { position: Float? ->
+            if (position != null) lastScrubPosition.floatValue = position
+            currentOnScrub(position)
+        }
+    }
+    val chartDrawing = remember(points, progress, scrubPosition) {
+        Modifier.drawWithCache {
+            if (points.size < 2) return@drawWithCache onDrawBehind {}
 
-    var dragX by remember { mutableFloatStateOf(0f) }
+            val maxVal = points.maxOf { it.value }
+            val minVal = points.minOf { it.value }
+            val dataRange = maxVal - minVal
+            val midVal = (maxVal + minVal) / 2.0
+            val minRange = kotlin.math.abs(midVal) * 0.02
+            val range = dataRange.coerceAtLeast(minRange).coerceAtLeast(1.0)
+            val chartMin = midVal - range / 2.0
+            val topPad = 8.dp.toPx()
+            val chartHeight = size.height - topPad - 8.dp.toPx()
+            val startDate = points.first().date
+            val duration = (points.last().date - startDate).toDouble().coerceAtLeast(1.0)
+            val coords = points.map { point ->
+                Offset(
+                    x = ((point.date - startDate) / duration).toFloat() * size.width,
+                    y = topPad + chartHeight * (1f - ((point.value - chartMin) / range).toFloat()),
+                )
+            }
+            val linePath = buildSmoothPath(coords)
+            val fillPath = Path().apply {
+                addPath(linePath)
+                lineTo(coords.last().x, topPad + chartHeight)
+                lineTo(coords.first().x, topPad + chartHeight)
+                close()
+            }
+            val stroke = Stroke(width = 2.5.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
+            var gradientColor = Color.Unspecified
+            var fillBrush: Brush? = null
 
-    Canvas(
+            onDrawBehind {
+                val currentFill = currentFillColor.value
+                if (currentFill != gradientColor) {
+                    gradientColor = currentFill
+                    fillBrush = Brush.verticalGradient(
+                        colors = listOf(currentFill.copy(alpha = 0.5f), currentFill.copy(alpha = 0f)),
+                        startY = topPad,
+                        endY = topPad + chartHeight,
+                    )
+                }
+                clipRect(right = size.width * progress.value.coerceIn(0f, 1f)) {
+                    fillBrush?.let { drawPath(path = fillPath, brush = it) }
+                    drawPath(path = linePath, color = currentLineColor.value, style = stroke)
+                }
+
+                val opacity = scrubOpacity.value
+                if (opacity > 0f) {
+                    val position = scrubPosition.value ?: lastScrubPosition.floatValue
+                    val idx = nearestChartPointIndex(points, position) ?: return@onDrawBehind
+                    val center = coords[idx]
+                    drawLine(
+                        color = scrubLineColor.value,
+                        start = Offset(center.x, topPad),
+                        end = Offset(center.x, topPad + chartHeight),
+                        strokeWidth = 1.dp.toPx(),
+                        alpha = opacity,
+                    )
+                    val scale = scrubScale.value
+                    drawCircle(color = Color.White, radius = 6.dp.toPx() * scale, center = center, alpha = opacity)
+                    drawCircle(color = currentLineColor.value, radius = 4.dp.toPx() * scale, center = center, alpha = opacity)
+                }
+            }
+        }
+    }
+
+    Box(
         modifier
             .pointerInput(Unit) {
                 detectHorizontalDragGestures(
                     onDragStart = { offset ->
-                        dragX = offset.x
-                        onScrub(dragX / size.width)
+                        isDragging.value = true
+                        updateScrub(offset.x / size.width)
                     },
-                    onDragEnd = { onScrub(null) },
-                    onDragCancel = { onScrub(null) },
-                    onHorizontalDrag = { change, dragAmount ->
+                    onDragEnd = {
+                        isDragging.value = false
+                        updateScrub(null)
+                    },
+                    onDragCancel = {
+                        isDragging.value = false
+                        updateScrub(null)
+                    },
+                    onHorizontalDrag = { change, _ ->
                         change.consume()
-                        dragX = (dragX + dragAmount).coerceIn(0f, size.width.toFloat())
-                        onScrub(dragX / size.width)
+                        updateScrub((change.position.x / size.width).coerceIn(0f, 1f))
                     },
                 )
             }.pointerInput(Unit) {
                 detectTapGestures(
                     onPress = { offset ->
-                        onScrub(offset.x / size.width)
+                        updateScrub(offset.x / size.width)
                         val released = tryAwaitRelease()
-                        if (released) onScrub(null)
+                        if (released || !isDragging.value) updateScrub(null)
                     },
                 )
-            },
-    ) {
-        if (points.size < 2) return@Canvas
+            }.then(chartDrawing),
+    )
+}
 
-        val maxVal = points.max()
-        val minVal = points.min()
-        val dataRange = maxVal - minVal
-        val midVal = (maxVal + minVal) / 2.0
-        // Ensure the Y range is at least 2% of the midpoint so tiny
-        // fluctuations don't stretch to fill the entire chart height.
-        val minRange = kotlin.math.abs(midVal) * 0.02
-        val range = dataRange.coerceAtLeast(minRange).coerceAtLeast(1.0)
-        val chartMin = midVal - range / 2.0
-        val topPad = 8.dp.toPx()
-        val bottomPad = 8.dp.toPx()
-        val chartHeight = size.height - topPad - bottomPad
+private fun nearestChartPointIndex(points: List<ChartPoint>, position: Float): Int? {
+    if (points.isEmpty()) return null
+    if (points.size == 1) return 0
 
-        // Calculate point positions
-        val coords =
-            points.mapIndexed { i, v ->
-                val x = i.toFloat() / (points.size - 1) * size.width
-                val y = topPad + chartHeight * (1f - ((v - chartMin) / range).toFloat())
-                Offset(x, y)
-            }
+    val startDate = points.first().date
+    val duration = points.last().date - startDate
+    if (duration <= 0) return points.lastIndex
 
-        // Determine how far to draw based on animation
-        val visibleCount = (coords.size * progress).toInt().coerceAtLeast(2)
-        val visible = coords.take(visibleCount)
+    val targetDate = startDate.toDouble() + position.coerceIn(0f, 1f) * duration.toDouble()
+    val index = points.binarySearch { it.date.toDouble().compareTo(targetDate) }
+    if (index >= 0) return index
 
-        // Build smooth cubic bezier path
-        val linePath = buildSmoothPath(visible)
+    val nextIndex = -index - 1
+    if (nextIndex == 0) return 0
+    if (nextIndex == points.size) return points.lastIndex
 
-        // Gradient fill
-        val fillPath =
-            Path().apply {
-                addPath(linePath)
-                lineTo(visible.last().x, topPad + chartHeight)
-                lineTo(visible.first().x, topPad + chartHeight)
-                close()
-            }
-
-        drawPath(
-            path = fillPath,
-            brush =
-                Brush.verticalGradient(
-                    colors = listOf(fillColor.copy(alpha = 0.5f), fillColor.copy(alpha = 0.0f)),
-                    startY = topPad,
-                    endY = topPad + chartHeight,
-                ),
-        )
-
-        // Line
-        drawPath(
-            path = linePath,
-            color = lineColor,
-            style = Stroke(width = 2.5.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round),
-        )
-
-        // Scrub indicator
-        if (scrubPosition != null) {
-            val sx = (scrubPosition * size.width).coerceIn(0f, size.width)
-            val idx = (scrubPosition * (points.size - 1)).roundToInt().coerceIn(0, points.size - 1)
-            val sy = coords[idx].y
-
-            // Vertical line
-            drawLine(
-                color = scrubLineColor,
-                start = Offset(sx, topPad),
-                end = Offset(sx, topPad + chartHeight),
-                strokeWidth = 1.dp.toPx(),
-            )
-
-            // Dot
-            drawCircle(color = Color.White, radius = 6.dp.toPx(), center = Offset(sx, sy))
-            drawCircle(color = scrubDotColor, radius = 4.dp.toPx(), center = Offset(sx, sy))
-        }
+    val previousIndex = nextIndex - 1
+    return if (targetDate - points[previousIndex].date <= points[nextIndex].date - targetDate) {
+        previousIndex
+    } else {
+        nextIndex
     }
 }
 

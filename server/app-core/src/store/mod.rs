@@ -107,6 +107,12 @@ impl AppStore {
                 let _ = tracing_subscriber::registry().with(layer).try_init();
             }
         }
+        #[cfg(target_os = "ios")]
+        {
+            use tracing_subscriber::prelude::*;
+            let layer = tracing_oslog::OsLogger::new("com.sverto.app", "sverto-core");
+            let _ = tracing_subscriber::registry().with(layer).try_init();
+        }
 
         tracing::info!("AppStore::new base_url={} db_path={}", base_url, db_path);
 
@@ -224,7 +230,7 @@ impl AppStore {
 
         if let Some(auth_me) = auth_me {
             self.infra.apply_auth_me(&auth_me);
-        } else {
+        } else if self.infra.user_id().is_none() {
             *self.infra.user_id.lock().unwrap() = self.auth_provider.get_user_id();
         }
 

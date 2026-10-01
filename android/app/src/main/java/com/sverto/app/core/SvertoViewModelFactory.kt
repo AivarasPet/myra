@@ -48,9 +48,9 @@ object SvertoViewModelFactory : ViewModelProvider.Factory {
             modelClass.isAssignableFrom(TransactionSearchViewModel::class.java) ->
                 TransactionSearchViewModel(appStore) as T
             modelClass.isAssignableFrom(CreateTransactionViewModel::class.java) ->
-                CreateTransactionViewModel(appStore) as T
+                CreateTransactionViewModel(appStore, app.categorySuggester) as T
             modelClass.isAssignableFrom(CreateTransactionGroupViewModel::class.java) ->
-                CreateTransactionGroupViewModel(appStore) as T
+                CreateTransactionGroupViewModel(appStore, app.categorySuggester) as T
             modelClass.isAssignableFrom(QuickUploadViewModel::class.java) ->
                 QuickUploadViewModel(appStore) as T
             modelClass.isAssignableFrom(AccountsViewModel::class.java) ->

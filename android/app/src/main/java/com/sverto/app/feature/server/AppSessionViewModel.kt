@@ -84,7 +84,7 @@ class AppSessionViewModel(
         appStore.observeAuth(authObserver)
         viewModelScope.launch {
             Clerk.auth.events.collect { event ->
-                if (event is AuthEvent.SignedOut && _state.value != SessionState.Welcome) {
+                if (event is AuthEvent.SignedOut && isClerkMode() && _state.value != SessionState.Welcome) {
                     returnToWelcome()
                 }
             }

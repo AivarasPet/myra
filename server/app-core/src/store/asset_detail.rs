@@ -17,6 +17,7 @@ pub struct AssetDetailModule {
     observer: Option<Box<dyn AssetDetailObserver>>,
     account_id: String,
     asset_id: i32,
+    request_generation: u64,
 }
 
 impl Default for AssetDetailModule {
@@ -50,6 +51,7 @@ impl AssetDetailModule {
             observer: None,
             account_id: String::new(),
             asset_id: 0,
+            request_generation: 0,
         }
     }
 
@@ -63,6 +65,7 @@ impl AssetDetailModule {
     }
 
     pub fn clear_state(&mut self) {
+        self.request_generation = self.request_generation.wrapping_add(1);
         self.state = AssetDetailState {
             is_loading: false,
             error: None,
@@ -106,15 +109,21 @@ pub async fn load_asset_detail(
         None => return,
     };
 
-    {
+    let request_generation = {
         let mut m = module.lock().unwrap();
+        m.request_generation = m.request_generation.wrapping_add(1);
+        if m.account_id != account_id || m.asset_id != asset_id {
+            m.state = AssetDetailState::default();
+        }
         m.account_id = account_id.to_string();
         m.asset_id = asset_id;
         m.state.is_loading = true;
+        m.state.error = None;
         m.state.asset_id = asset_id;
         m.state.base_ticker = infra.default_asset_ticker().unwrap_or_default();
         m.notify();
-    }
+        m.request_generation
+    };
 
     // Phase 1: Fetch overview and asset metadata to resolve reference_id
     let overview_path = format!("/api/users/{user_id}/accounts/{account_id}/portfolio/overview");
@@ -156,6 +165,9 @@ pub async fn load_asset_detail(
     let rate_results = futures_util::future::join_all(rate_futures).await;
 
     let mut m = module.lock().unwrap();
+    if m.request_generation != request_generation {
+        return;
+    }
     let mut error: Option<String> = None;
 
     // Process overview — find the specific asset
@@ -243,9 +255,13 @@ pub async fn load_asset_detail_base_chart(
     module: &Mutex<AssetDetailModule>,
     auth_token: Option<&str>,
 ) {
-    let (asset_id, already_loaded) = {
+    let (asset_id, already_loaded, request_generation) = {
         let m = module.lock().unwrap();
-        (m.asset_id, !m.state.base_chart_data.is_empty())
+        (
+            m.asset_id,
+            !m.state.base_chart_data.is_empty(),
+            m.request_generation,
+        )
     };
     if already_loaded {
         return;
@@ -278,6 +294,9 @@ pub async fn load_asset_detail_base_chart(
     }
 
     let mut m = module.lock().unwrap();
+    if m.request_generation != request_generation {
+        return;
+    }
     m.state.base_chart_data = chart_data;
     m.notify();
 }

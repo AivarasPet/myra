@@ -19,6 +19,7 @@ pub struct QuickUploadsModule {
     observer: Option<Box<dyn QuickUploadsObserver>>,
     sse_subscriptions: HashSet<String>,
     cancelled: Arc<AtomicBool>,
+    flush_lock: Arc<tokio::sync::Mutex<()>>,
 }
 
 impl Default for QuickUploadsModule {
@@ -34,6 +35,7 @@ impl QuickUploadsModule {
             observer: None,
             sse_subscriptions: HashSet::new(),
             cancelled: Arc::new(AtomicBool::new(false)),
+            flush_lock: Arc::new(tokio::sync::Mutex::new(())),
         }
     }
 
@@ -115,6 +117,8 @@ pub async fn flush_and_subscribe(
     module: &Arc<Mutex<QuickUploadsModule>>,
     auth_token: Option<&str>,
 ) {
+    let flush_lock = module.lock().unwrap().flush_lock.clone();
+    let flush_guard = flush_lock.lock().await;
     tracing::info!(
         "QuickUploads: flush_and_subscribe called, connectivity={}",
         infra.has_connectivity()
@@ -174,6 +178,7 @@ pub async fn flush_and_subscribe(
         }
     }
 
+    drop(flush_guard);
     tracing::info!("QuickUploads: flush done, calling fetch_and_update");
     fetch_and_update(infra, module, auth_token).await;
     subscribe_processing_items(infra, module, &user_id, auth_token).await;

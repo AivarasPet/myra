@@ -43,6 +43,7 @@ pub mod paging_dto;
 pub mod portfolio;
 
 pub mod rate_limit_error_dto;
+pub mod refresh_token_error_dto;
 pub mod service_unavailable_error_dto;
 pub mod transaction_dto;
 pub mod transaction_group_dto;

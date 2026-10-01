@@ -32,6 +32,13 @@ val isReleaseBuild =
         it.contains("Release", ignoreCase = true)
     }
 val targetAbis = if (isReleaseBuild) abiToTarget.keys.toList() else listOf("arm64-v8a")
+val rustLinkerArgs =
+    listOf(
+        "-C",
+        "link-arg=-Wl,-z,max-page-size=16384",
+        "-C",
+        "link-arg=-Wl,-z,common-page-size=16384",
+    )
 
 // Resolve cargo binary — Android Studio doesn't inherit shell PATH
 val cargoHome = System.getenv("CARGO_HOME") ?: "${System.getProperty("user.home")}/.cargo"
@@ -47,6 +54,7 @@ tasks.register("buildRustCore") {
     inputs.dir(uniffiCoreDir.resolve("src"))
     inputs.file(uniffiCoreDir.resolve("Cargo.toml"))
     inputs.property("targetAbis", targetAbis)
+    inputs.property("rustLinkerArgs", rustLinkerArgs)
     outputs.dir(jniLibsDir)
 
     doLast {
@@ -55,7 +63,10 @@ tasks.register("buildRustCore") {
             providers
                 .exec {
                     workingDir = coreDir
-                    commandLine(cargo, "ndk", "--target", target, "--platform", "24", "--", "build", "--release")
+                    commandLine(
+                        listOf(cargo, "ndk", "--target", target, "--platform", "24", "--", "rustc", "--release", "--lib", "--") +
+                            rustLinkerArgs,
+                    )
                 }.result
                 .get()
             val dest = jniLibsDir.resolve(abi)
@@ -120,6 +131,7 @@ val isProd = appEnv == "prod"
 android {
     namespace = "com.sverto.app"
     compileSdk = 37
+    ndkVersion = "27.1.12297006"
 
     defaultConfig {
         minSdk = 24
@@ -186,6 +198,9 @@ android {
         }
         release {
             signingConfig = signingConfigs.getByName("app")
+            ndk {
+                debugSymbolLevel = "SYMBOL_TABLE"
+            }
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
@@ -207,6 +222,7 @@ android {
     }
 
     compileOptions {
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
@@ -251,6 +267,7 @@ tasks.withType<io.gitlab.arturbosch.detekt.DetektCreateBaselineTask>().configure
 }
 
 dependencies {
+    coreLibraryDesugaring(libs.desugar.jdk.libs)
     detektPlugins(libs.compose.detekt)
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)

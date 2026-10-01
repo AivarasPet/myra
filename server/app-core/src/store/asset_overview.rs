@@ -17,6 +17,7 @@ pub struct AssetOverviewModule {
     observer: Option<Box<dyn AssetOverviewObserver>>,
     asset_id: i32,
     reference_asset_id: i32,
+    request_generation: u64,
 }
 
 impl Default for AssetOverviewModule {
@@ -32,6 +33,7 @@ impl AssetOverviewModule {
             observer: None,
             asset_id: 0,
             reference_asset_id: 0,
+            request_generation: 0,
         }
     }
 
@@ -45,6 +47,7 @@ impl AssetOverviewModule {
     }
 
     pub fn clear_state(&mut self) {
+        self.request_generation = self.request_generation.wrapping_add(1);
         self.state = AssetOverviewState::default();
         self.asset_id = 0;
         self.reference_asset_id = 0;
@@ -70,27 +73,20 @@ pub async fn load_asset_overview(
         None => return,
     };
 
-    {
+    let request_generation = {
         let mut m = module.lock().unwrap();
-        let asset_changed = m.asset_id != asset_id;
+        m.request_generation = m.request_generation.wrapping_add(1);
+        if m.asset_id != asset_id || m.reference_asset_id != reference_asset_id {
+            m.state = AssetOverviewState::default();
+        }
         m.asset_id = asset_id;
         m.reference_asset_id = reference_asset_id;
-        if asset_changed {
-            m.state.ticker = String::new();
-            m.state.name = String::new();
-            m.state.units = 0.0;
-            m.state.value = 0.0;
-            m.state.cost_basis = 0.0;
-            m.state.unrealized_gains = 0.0;
-            m.state.total_fees = 0.0;
-            m.state.current_price = 0.0;
-            m.state.lots = vec![];
-        }
         m.state.is_loading = true;
         m.state.error = None;
         m.state.asset_id = asset_id;
         m.notify();
-    }
+        m.request_generation
+    };
 
     let overview_path =
         format!("/api/users/{user_id}/portfolio/assets/{asset_id}/overview?default_asset_id={reference_asset_id}");
@@ -118,6 +114,9 @@ pub async fn load_asset_overview(
     };
 
     let mut m = module.lock().unwrap();
+    if m.request_generation != request_generation {
+        return;
+    }
     let mut error: Option<String> = None;
 
     if let Ok(resp) = overview_result {

@@ -17,6 +17,7 @@ pub struct AccountDetailModule {
     state: AccountDetailState,
     observer: Option<Box<dyn AccountDetailObserver>>,
     account_id: String,
+    request_generation: u64,
 }
 
 impl Default for AccountDetailModule {
@@ -47,6 +48,7 @@ impl AccountDetailModule {
             },
             observer: None,
             account_id: String::new(),
+            request_generation: 0,
         }
     }
 
@@ -60,6 +62,7 @@ impl AccountDetailModule {
     }
 
     pub fn clear_state(&mut self) {
+        self.request_generation = self.request_generation.wrapping_add(1);
         self.state = AccountDetailState {
             is_loading: false,
             error: None,
@@ -101,16 +104,22 @@ pub async fn load_account_detail(
         None => return,
     };
 
-    {
+    let request_generation = {
         let mut m = module.lock().unwrap();
+        m.request_generation = m.request_generation.wrapping_add(1);
+        if m.account_id != account_id {
+            m.state = AccountDetailState::default();
+        }
         m.account_id = account_id.to_string();
         m.state.is_loading = true;
+        m.state.error = None;
         m.state.account_id = account_id.to_string();
         m.state.account_name = account_name.to_string();
         m.state.account_type_id = account_type_id;
         m.state.base_ticker = infra.default_asset_ticker().unwrap_or_default();
         m.notify();
-    }
+        m.request_generation
+    };
 
     // Build paths
     let overview_path = format!("/api/users/{user_id}/accounts/{account_id}/portfolio/overview");
@@ -136,6 +145,9 @@ pub async fn load_account_detail(
     );
 
     let mut m = module.lock().unwrap();
+    if m.request_generation != request_generation {
+        return;
+    }
     let mut error: Option<String> = None;
 
     // Process overview
