@@ -51,6 +51,7 @@ targets:
       path: Sverto/Sverto.entitlements
       properties:
         com.apple.security.application-groups: [$(APP_GROUP_IDENTIFIER)]
+        com.apple.developer.applesignin: [Default]
     preBuildScripts:
       - name: Build Rust core
         script: |

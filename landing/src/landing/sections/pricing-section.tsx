@@ -26,7 +26,7 @@ const SELF_HOSTED = [
   "Bring your own market-data source",
   "Bring your own AI key, or run without Myra entirely",
   "Your Postgres, your backups, your uptime",
-  "Web and Android, pointed at your server",
+  "Web, iOS and Android, pointed at your server",
 ]
 
 export function PricingSection() {

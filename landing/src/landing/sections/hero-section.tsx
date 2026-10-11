@@ -41,7 +41,7 @@ export function HeroSection() {
             <li aria-hidden className="text-border-strong">
               ·
             </li>
-            <li>Web + Android</li>
+            <li>Web + iOS + Android</li>
           </ul>
         </div>
 

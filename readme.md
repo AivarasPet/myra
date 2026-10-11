@@ -17,7 +17,7 @@
 </p>
 
 <p align="center">
-  <img src=".github/assets/hero.png" alt="Sverto on web and Android — two years of net worth history with holdings across property, pension, ETFs, stocks, and crypto" width="940" />
+  <img src=".github/assets/hero.png" alt="Sverto on web, iOS, and Android — native portfolio screens overlapping the current web dashboard, shown in dark mode with demo data" width="940" />
 </p>
 
 ---
@@ -83,13 +83,45 @@ The AI assistant uses Gemini and stores embeddings in your PostgreSQL database. 
 
 - **Web** — Full-featured web app. Run it on your own server or access it from any browser.
 - **Android** — Native Kotlin app with Jetpack Compose, powered by the shared Rust core.
-- **iOS** — Coming soon
+- **iOS** — Native SwiftUI app, powered by the shared Rust core.
+
+### Web
+
+Net worth, accounts, and recent activity in one view.
+
+<p align="center">
+  <img src="landing/public/shots/ledger-dark.png" alt="Current Sverto web dashboard in dark mode, with net worth history, accounts, recent transactions, and investments" width="940" />
+</p>
+
+<details>
+  <summary>Explore transactions and investments on the web</summary>
+  <p align="center">
+    <img src=".github/assets/web-transactions.png" alt="Current web transactions ledger in dark mode, with daily activity and transaction details" width="940" />
+  </p>
+  <p align="center">
+    <img src=".github/assets/web-portfolio.png" alt="Current web investment portfolio in dark mode, with holdings, asset allocation, and performance" width="940" />
+  </p>
+</details>
+
+### iOS
+
+Portfolio history, everyday transactions, and individual purchase lots in the native iOS app.
+
+<p align="center">
+  <img src=".github/assets/ios-portfolio.png" alt="Native iOS portfolio with net worth history and holdings" width="30%" />
+  <img src=".github/assets/ios-transactions.png" alt="Native iOS transaction feed with activity grouped by day and categorized entries" width="30%" />
+  <img src=".github/assets/ios-asset-lots.png" alt="Native iOS asset detail with purchase lots and performance" width="30%" />
+</p>
+
+### Android
 
 <p align="center">
   <img src=".github/assets/android-portfolio.png" alt="Net worth and holdings on Android" width="30%" />
   <img src=".github/assets/android-transactions.png" alt="Transactions feed on Android" width="30%" />
   <img src=".github/assets/android-asset-lots.png" alt="Asset detail with purchase lots and per-lot P&L on Android" width="30%" />
 </p>
+
+<p align="center"><sub>Screens show demo data. Web and iOS screenshots captured in October 2026; Android screenshots retained from the existing gallery.</sub></p>
 
 ---
 
@@ -102,9 +134,10 @@ The AI assistant uses Gemini and stores embeddings in your PostgreSQL database. 
   <img src="https://img.shields.io/badge/PostgreSQL-316192?style=for-the-badge&logo=postgresql&logoColor=white" alt="PostgreSQL" />
   <img src="https://img.shields.io/badge/OpenTelemetry-FFD23F?style=for-the-badge&logo=opentelemetry&logoColor=black" alt="OpenTelemetry" />
   <img src="https://img.shields.io/badge/Android-3DDC84?style=for-the-badge&logo=android&logoColor=white" alt="Android" />
+  <img src="https://img.shields.io/badge/Swift-F05138?style=for-the-badge&logo=swift&logoColor=white" alt="Swift" />
 </p>
 
-The backend is written in Rust for speed and reliability. The web frontend uses React with TypeScript. The Android app is native Kotlin + Jetpack Compose, sharing the same Rust business logic via UniFFI. iOS support is on the roadmap — the shared Rust core makes it straightforward.
+The backend is written in Rust for speed and reliability. The web frontend uses React with TypeScript. Android uses Kotlin + Jetpack Compose, and iOS uses SwiftUI. Both native apps share the Rust core through UniFFI.
 
 ---
 

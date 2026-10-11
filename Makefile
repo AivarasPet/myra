@@ -504,13 +504,17 @@ ios-install-prod: ios-simulator ios-lucide ## Build and install the prod iOS app
 		-destination "platform=iOS Simulator,id=$$UDID" -derivedDataPath $(IOS_DERIVED) -quiet build && \
 	APP=$$(find $(IOS_DERIVED)/Build/Products/Release-iphonesimulator -maxdepth 1 -name 'Sverto.app' | head -n1) && \
 	xcrun simctl install "$$UDID" "$$APP" && xcrun simctl launch "$$UDID" $(IOS_PROD_BUNDLE_ID) >/dev/null && \
-	DEVICES=$$(xcrun devicectl list devices -j /dev/stdout 2>/dev/null | python3 -c 'import sys,json; print(" ".join(d["identifier"] for d in json.load(sys.stdin)["result"]["devices"] if d.get("connectionProperties",{}).get("tunnelState")=="connected"))' 2>/dev/null); \
-	if [ -n "$$DEVICES" ]; then \
-		xcodebuild -project $(IOS_PROJECT) -scheme Sverto -configuration Release -destination 'generic/platform=iOS' \
-			-derivedDataPath $(IOS_DERIVED) -allowProvisioningUpdates -quiet build && \
+	DEVICE_JSON=$$(mktemp); \
+	xcrun devicectl list devices -j "$$DEVICE_JSON" >/dev/null || { rm -f "$$DEVICE_JSON"; exit 1; }; \
+	DEVICES=$$(python3 -c 'import sys,json; print(" ".join(d["hardwareProperties"]["udid"] for d in json.load(open(sys.argv[1]))["result"]["devices"] if d.get("connectionProperties",{}).get("tunnelState")=="connected" or (d.get("connectionProperties",{}).get("transportType")=="wired" and d.get("connectionProperties",{}).get("pairingState")=="paired")))' "$$DEVICE_JSON") || { rm -f "$$DEVICE_JSON"; exit 1; }; \
+	rm -f "$$DEVICE_JSON"; \
+	for d in $$DEVICES; do \
+		xcodebuild -project $(IOS_PROJECT) -scheme Sverto -configuration Release -destination "platform=iOS,id=$$d" \
+			-derivedDataPath $(IOS_DERIVED) -allowProvisioningUpdates -allowProvisioningDeviceRegistration -quiet build || exit $$?; \
 		DEVAPP=$$(find $(IOS_DERIVED)/Build/Products/Release-iphoneos -maxdepth 1 -name 'Sverto.app' | head -n1) && \
-		for d in $$DEVICES; do echo "$(GREEN)Installing on device $$d$(NC)"; xcrun devicectl device install app --device "$$d" "$$DEVAPP" && xcrun devicectl device process launch --device "$$d" $(IOS_PROD_BUNDLE_ID); done; \
-	fi
+		echo "$(GREEN)Installing on device $$d$(NC)"; \
+		xcrun devicectl device install app --device "$$d" "$$DEVAPP" && xcrun devicectl device process launch --device "$$d" $(IOS_PROD_BUNDLE_ID) || exit $$?; \
+	done
 
 .PHONY: ios-archive-prod
 ios-archive-prod: ios-lucide ## Archive the prod iOS app and export an App Store Connect IPA (ios/build/Sverto.xcarchive, ios/build/export/Sverto.ipa). Needs .secrets.prod with CLERK_PUBLISHABLE_KEY and IOS_TEAM_ID
@@ -521,7 +525,8 @@ ios-archive-prod: ios-lucide ## Archive the prod iOS app and export an App Store
 	APP_API_BASE_URL=https://api.sverto.com CLERK_PUBLISHABLE_KEY="$$CLERK_PUBLISHABLE_KEY" IOS_TEAM_ID="$$IOS_TEAM_ID" $(IOS_DIR)/scripts/write-generated-xcconfig.sh && \
 	$(MAKE) ios-project && \
 	xcodebuild -project $(IOS_PROJECT) -scheme Sverto -configuration Release -destination 'generic/platform=iOS' \
-		-derivedDataPath $(IOS_DERIVED) -archivePath $(IOS_DERIVED)/Sverto.xcarchive -allowProvisioningUpdates -quiet archive && \
+		-derivedDataPath $(IOS_DERIVED) -archivePath $(IOS_DERIVED)/Sverto.xcarchive -allowProvisioningUpdates -quiet CODE_SIGNING_ALLOWED=NO archive && \
+	python3 $(IOS_DIR)/scripts/prepare-archive-signing.py $(IOS_DERIVED)/Sverto.xcarchive && \
 	sed "s/IOS_TEAM_ID/$$IOS_TEAM_ID/" $(IOS_DIR)/Config/ExportOptions.plist > $(IOS_DERIVED)/ExportOptions.plist && \
 	xcodebuild -exportArchive -archivePath $(IOS_DERIVED)/Sverto.xcarchive -exportOptionsPlist $(IOS_DERIVED)/ExportOptions.plist \
 		-exportPath $(IOS_DERIVED)/export -allowProvisioningUpdates -quiet

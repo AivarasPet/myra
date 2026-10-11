@@ -83,6 +83,7 @@ private struct AiChatContent: View {
                 .accessibilityLabel("Conversations")
                 .tint(.primary)
             }
+            ProfileToolbar()
         }
         .sheet(isPresented: $isConversationsPresented) {
             ConversationsSheet(model: model)

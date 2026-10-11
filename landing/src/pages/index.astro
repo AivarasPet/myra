@@ -11,7 +11,7 @@ const ogTitle = "Sverto — one ledger for your groceries and your portfolio"
 const ogDescription =
   "Spending, investing and net worth in one double-entry ledger. Salary in GBP, spending in EUR, dividends in USD — so your net worth finally includes everything."
 const ogImageAlt =
-  "The Sverto dashboard: a net worth figure in euros, a one-month chart, accounts grouped by cash, and recent transactions."
+  "The Sverto web dashboard showing net worth, a history chart, account balances and recent transactions."
 
 const siteUrl = Astro.site!.href
 const structuredData = {
@@ -54,7 +54,7 @@ const structuredData = {
       description:
         "A personal finance app that records spending and investments as entries in one double-entry ledger, with multi-currency accounts, portfolio tracking and an AI assistant that drafts entries for the user to approve.",
       applicationCategory: "FinanceApplication",
-      operatingSystem: "Web, Android",
+      operatingSystem: "Web, iOS, Android",
       image: new URL("/og-dashboard.png", Astro.site).href,
       offers: {
         "@type": "Offer",

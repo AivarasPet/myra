@@ -52,27 +52,9 @@ struct TabRoot: View {
         NavigationStack(path: path) {
             root()
                 .offlineBannerInset()
-                .modifier(ProfileToolbar())
                 .navigationDestination(for: AppRoute.self) { RouteDestination(route: $0) }
         }
         .toastHost(toasts)
-    }
-}
-
-private struct ProfileToolbar: ViewModifier {
-    @Environment(ShellState.self) private var shell
-    @Environment(TransactionsViewModel.self) private var transactions
-
-    func body(content: Content) -> some View {
-        content.toolbar {
-            if shell.selectedTab != .transactions || !transactions.selectionActive {
-                ToolbarItem(placement: .topBarTrailing) {
-                    ProfileAvatarButton()
-                        .tint(.primary)
-                }
-                ToolbarSpacer(.fixed, placement: .topBarTrailing)
-            }
-        }
     }
 }
 

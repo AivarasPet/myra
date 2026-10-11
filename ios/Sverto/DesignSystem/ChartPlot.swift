@@ -56,14 +56,12 @@ struct ChartPlot: View, Equatable {
         }
         .opacity(series.samples.count < 2 ? 0 : 1)
         .accessibilityLabel("Value chart in \(series.ticker)")
-        .task(id: ObjectIdentifier(series)) {
-            guard !reduceMotion, series.samples.count >= 2 else {
+        .task(id: series.samples.count >= 2) {
+            guard series.samples.count >= 2, revealProgress == 0 else { return }
+            guard !reduceMotion else {
                 revealProgress = 1
                 return
             }
-            var transaction = Transaction()
-            transaction.disablesAnimations = true
-            withTransaction(transaction) { revealProgress = 0 }
             do {
                 try await Task.sleep(for: .milliseconds(16))
             } catch {

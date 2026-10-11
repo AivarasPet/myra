@@ -21,13 +21,21 @@ private struct PortfolioRoot: View {
     }
 
     var body: some View {
-        PortfolioSearchSwitch(portfolio: portfolio, markets: markets)
+        PortfolioSearchSwitch(portfolio: portfolio, markets: markets, isSearching: isSearchPresented)
             .navigationTitle("Portfolio")
             .navigationBarTitleDisplayMode(.large)
-            .searchable(text: $query, isPresented: $isSearchPresented, placement: .toolbar, prompt: "Search assets")
-            .searchToolbarBehavior(.minimize)
+            .modifier(ToolbarSearch(text: $query, isPresented: $isSearchPresented, prompt: "Search assets"))
             .toolbar {
-                DefaultToolbarItem(kind: .search, placement: .topBarTrailing)
+                if !isSearchPresented {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Search assets", systemImage: "magnifyingglass") {
+                            isSearchPresented = true
+                        }
+                        .labelStyle(.iconOnly)
+                        .tint(.primary)
+                    }
+                    ProfileToolbar()
+                }
                 ToolbarItem(placement: .topBarLeading) {
                     Image("Logo")
                         .resizable()
@@ -49,8 +57,8 @@ private struct PortfolioRoot: View {
 private struct PortfolioSearchSwitch: View {
     let portfolio: HomeViewModel
     let markets: MarketsListViewModel
+    let isSearching: Bool
 
-    @Environment(\.isSearching) private var isSearching
     @Environment(ShellState.self) private var shell
 
     var body: some View {

@@ -88,8 +88,8 @@ export function MyraSection() {
             <div className="sm:pt-5">
               <MetaLabel>Step 1</MetaLabel>
               <p className="mt-2.5 text-[13.5px] leading-[1.6] text-pretty text-ink-2">
-                You photograph a receipt in the Android app. Myra reads the
-                merchant, the total, the currency and the date.
+                You photograph a receipt in the iOS or Android app. Myra reads
+                the merchant, the total, the currency and the date.
               </p>
               <MetaLabel className="mt-5">Step 2</MetaLabel>
               <p className="mt-2.5 text-[13.5px] leading-[1.6] text-pretty text-ink-2">

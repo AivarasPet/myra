@@ -47,6 +47,26 @@ with `client:media="(min-width: 1024px)"`, so below 1024px no JavaScript is down
 all. The `hidden lg:block` wrapper around it is what hides the server-rendered skeleton on
 phones — the width gate moved from `useShellWidth` to CSS.
 
+## Product screenshots
+
+The clients section uses app captures in `public/shots/`, with a dark and light
+variant for each platform:
+
+| Platform          | Files                                 | Dimensions  |
+| ----------------- | ------------------------------------- | ----------- |
+| Web dashboard     | `ledger-dark.png`, `ledger-light.png` | 1434 × 1190 |
+| iOS portfolio     | `ios-dark.png`, `ios-light.png`       | 640 × 1391  |
+| Android portfolio | `phone-dark.png`, `phone-light.png`   | 640 × 1436  |
+
+The wide web viewport uses a top-aligned 1600:826 crop. Both native phones overlap
+its lower-right corner, with a slight stagger and space reserved for their overhang.
+Keep the screenshot proportions and full native navigation visible. Update the
+dimensions in `src/landing/sections/clients-section.tsx` when replacing a capture
+with a different size. Theme selection and responsive layout use CSS only.
+
+The hero in `src/landing/sections/product-shot.tsx` is an illustrative ledger built
+from shared components and mock data; it is separate from these app captures.
+
 ## Open Graph image
 
 `public/og-dashboard.png` is a 1200×630 crop of `public/shots/ledger-dark.png`. If the

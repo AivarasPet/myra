@@ -31,6 +31,7 @@ private struct AccountsList: View {
                     .tint(.primary)
                     .accessibilityLabel("Add account")
                 }
+                ProfileToolbar()
             }
             .task { await model.start() }
             .onDisappear { model.stop() }

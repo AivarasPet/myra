@@ -36,7 +36,11 @@ private struct TransactionsTab: View {
             .onChange(of: isSearchPresented) { _, presented in
                 if presented { model.clearSelection() }
             }
-            .modifier(NewTransactionEntryPoints(quickUploads: quickUploads, isHidden: model.selectionActive))
+            .modifier(NewTransactionEntryPoints(
+                quickUploads: quickUploads,
+                isHidden: model.selectionActive,
+                isSearchPresented: $isSearchPresented
+            ))
             .modifier(SelectionActions(model: model))
             .onChange(of: model.actionFailure) { _, failure in
                 if let failure { toasts.show(failure.message) }
@@ -97,25 +101,20 @@ private struct TransactionSearchToolbar: ViewModifier {
     @Binding var text: String
     @Binding var isPresented: Bool
 
+    @ViewBuilder
     func body(content: Content) -> some View {
-        content
-            .background {
-                if isEnabled {
-                    Color.clear
-                        .frame(width: 0, height: 0)
-                        .searchable(text: $text, isPresented: $isPresented, placement: .toolbar, prompt: "Search transactions")
-                        .searchToolbarBehavior(.minimize)
-                        .toolbar {
-                            DefaultToolbarItem(kind: .search, placement: .topBarTrailing)
-                        }
-                }
-            }
+        if isEnabled {
+            content.modifier(ToolbarSearch(text: $text, isPresented: $isPresented, prompt: "Search transactions"))
+        } else {
+            content
+        }
     }
 }
 
 private struct NewTransactionEntryPoints: ViewModifier {
     let quickUploads: QuickUploadViewModel
     let isHidden: Bool
+    @Binding var isSearchPresented: Bool
 
     @State private var isTypePickerPresented = false
     @State private var isPhotoPickerPresented = false
@@ -127,14 +126,20 @@ private struct NewTransactionEntryPoints: ViewModifier {
     func body(content: Content) -> some View {
         content
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    if !isHidden {
+                if !isHidden && !isSearchPresented {
+                    ToolbarItemGroup(placement: .topBarTrailing) {
+                        Button("Search transactions", systemImage: "magnifyingglass") {
+                            isSearchPresented = true
+                        }
+                        .labelStyle(.iconOnly)
+                        .tint(.primary)
                         NewTransactionMenu(
                             onAddReceiptPhoto: { isPhotoPickerPresented = true },
                             onManualEntry: { isTypePickerPresented = true },
                             onNewGroup: { shell.push(.createTransactionGroup(quickUploadId: nil, fromSelection: false)) }
                         )
                     }
+                    ProfileToolbar()
                 }
             }
             .sheet(isPresented: $isTypePickerPresented, onDismiss: pushRouteAfterSheetDismiss) {

@@ -22,13 +22,23 @@ struct RootView: View {
             case .signUp:
                 PasswordSignUpScreen()
             case .clerkLogin:
-                ClerkLoginScreen()
+                WelcomeScreen()
             case let .signedIn(generation):
                 SignedInGate()
                     .id(generation)
             }
         }
         .animation(.default, value: session.state)
+        .fullScreenCover(isPresented: Binding(
+            get: { session.state == .clerkLogin },
+            set: { isPresented in
+                if !isPresented && session.state == .clerkLogin {
+                    session.showWelcome()
+                }
+            }
+        )) {
+            ClerkLoginScreen()
+        }
         .task { await session.start() }
         .onChange(of: clerk.userId) { _, newValue in
             if newValue == nil {
