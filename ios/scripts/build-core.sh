@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Builds the Rust core for iOS, generates the UniFFI Swift bindings and packages SvertoCoreFFI.xcframework.
-# Usage: build-core.sh [sim|all]   (sim = simulator slice only, all = simulator + device)
+# Usage: build-core.sh [sim|device|all]   (sim = simulator slice only, device = device slice only, all = both)
 # Env:   FORCE=1 rebuilds even when the xcframework is newer than every Rust input.
 set -euo pipefail
 
@@ -22,9 +22,13 @@ SIM_LIB="$SERVER_DIR/target/$SIM_TARGET/release/libsverto_core.a"
 DEVICE_LIB="$SERVER_DIR/target/$DEVICE_TARGET/release/libsverto_core.a"
 
 case "$VARIANT" in
-  sim|all) ;;
-  *) echo "usage: $0 [sim|all]" >&2; exit 2 ;;
+  sim|device|all) ;;
+  *) echo "usage: $0 [sim|device|all]" >&2; exit 2 ;;
 esac
+
+[ "$VARIANT" != "device" ] && BUILD_SIM=1 || BUILD_SIM=0
+[ "$VARIANT" != "sim" ] && BUILD_DEVICE=1 || BUILD_DEVICE=0
+[ "$BUILD_SIM" = "1" ] && BINDGEN_LIB="$SIM_LIB" || BINDGEN_LIB="$DEVICE_LIB"
 
 inputs=(
   "$SERVER_DIR/app-core/src"
@@ -42,7 +46,10 @@ is_up_to_date() {
   [ "${FORCE:-0}" = "1" ] && return 1
   [ -f "$XCFRAMEWORK/Info.plist" ] || return 1
   [ -f "$SWIFT_OUT/sverto_core.swift" ] || return 1
-  if [ "$VARIANT" = "all" ]; then
+  if [ "$BUILD_SIM" = "1" ]; then
+    [ -d "$XCFRAMEWORK/ios-arm64-simulator" ] || return 1
+  fi
+  if [ "$BUILD_DEVICE" = "1" ]; then
     [ -d "$XCFRAMEWORK/ios-arm64" ] || return 1
   fi
   local newest
@@ -55,9 +62,11 @@ if is_up_to_date; then
   exit 0
 fi
 
-echo "Building sverto-core for $SIM_TARGET"
-(cd "$SERVER_DIR" && "$CARGO" build --release -p sverto-core --target "$SIM_TARGET")
-if [ "$VARIANT" = "all" ]; then
+if [ "$BUILD_SIM" = "1" ]; then
+  echo "Building sverto-core for $SIM_TARGET"
+  (cd "$SERVER_DIR" && "$CARGO" build --release -p sverto-core --target "$SIM_TARGET")
+fi
+if [ "$BUILD_DEVICE" = "1" ]; then
   echo "Building sverto-core for $DEVICE_TARGET"
   (cd "$SERVER_DIR" && "$CARGO" build --release -p sverto-core --target "$DEVICE_TARGET")
 fi
@@ -69,7 +78,7 @@ mkdir -p "$STAGING/Headers" "$SWIFT_OUT"
   --swift-sources --headers --modulemap \
   --module-name SvertoCoreFFI --modulemap-filename module.modulemap \
   --link-frameworks Security --link-frameworks CoreFoundation \
-  "$SIM_LIB" "$STAGING")
+  "$BINDGEN_LIB" "$STAGING")
 mv "$STAGING"/*.h "$STAGING"/module.modulemap "$STAGING/Headers/"
 find "$SWIFT_OUT" -name '*.swift' -delete
 mv "$STAGING"/*.swift "$SWIFT_OUT/"
@@ -81,8 +90,11 @@ mv "$STAGING"/*.swift "$SWIFT_OUT/"
 
 echo "Packaging $XCFRAMEWORK"
 rm -rf "$XCFRAMEWORK"
-args=(-library "$SIM_LIB" -headers "$STAGING/Headers")
-if [ "$VARIANT" = "all" ]; then
+args=()
+if [ "$BUILD_SIM" = "1" ]; then
+  args+=(-library "$SIM_LIB" -headers "$STAGING/Headers")
+fi
+if [ "$BUILD_DEVICE" = "1" ]; then
   args+=(-library "$DEVICE_LIB" -headers "$STAGING/Headers")
 fi
 xcodebuild -create-xcframework "${args[@]}" -output "$XCFRAMEWORK" >/dev/null

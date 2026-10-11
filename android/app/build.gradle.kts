@@ -15,34 +15,14 @@ plugins {
 val coreDir = rootProject.file("../server/app-core")
 val serverDir = rootProject.file("../server")
 val uniffiCoreDir = serverDir.resolve("vendor/uniffi_core")
-val workspaceTargetDir = rootProject.file("../server/target")
+val buildCoreScript = rootProject.file("scripts/build-core.sh")
 val jniLibsDir = file("src/main/jniLibs")
-val bindingsDir = file("src/main/java")
-
-val abiToTarget =
-    mapOf(
-        "arm64-v8a" to "aarch64-linux-android",
-        "armeabi-v7a" to "armv7-linux-androideabi",
-        "x86_64" to "x86_64-linux-android",
-        "x86" to "i686-linux-android",
-    )
 
 val isReleaseBuild =
     gradle.startParameter.taskNames.any {
         it.contains("Release", ignoreCase = true)
     }
-val targetAbis = if (isReleaseBuild) abiToTarget.keys.toList() else listOf("arm64-v8a")
-val rustLinkerArgs =
-    listOf(
-        "-C",
-        "link-arg=-Wl,-z,max-page-size=16384",
-        "-C",
-        "link-arg=-Wl,-z,common-page-size=16384",
-    )
-
-// Resolve cargo binary — Android Studio doesn't inherit shell PATH
-val cargoHome = System.getenv("CARGO_HOME") ?: "${System.getProperty("user.home")}/.cargo"
-val cargo = "$cargoHome/bin/cargo"
+val targetAbis = if (isReleaseBuild) listOf("arm64-v8a", "armeabi-v7a", "x86_64", "x86") else listOf("arm64-v8a")
 
 tasks.register("buildRustCore") {
     description = "Cross-compile Rust core for Android and generate UniFFI bindings"
@@ -53,48 +33,14 @@ tasks.register("buildRustCore") {
     inputs.dir(serverDir.resolve("shared/src"))
     inputs.dir(uniffiCoreDir.resolve("src"))
     inputs.file(uniffiCoreDir.resolve("Cargo.toml"))
+    inputs.file(buildCoreScript)
     inputs.property("targetAbis", targetAbis)
-    inputs.property("rustLinkerArgs", rustLinkerArgs)
     outputs.dir(jniLibsDir)
 
     doLast {
-        for (abi in targetAbis) {
-            val target = abiToTarget[abi]!!
-            providers
-                .exec {
-                    workingDir = coreDir
-                    commandLine(
-                        listOf(cargo, "ndk", "--target", target, "--platform", "24", "--", "rustc", "--release", "--lib", "--") +
-                            rustLinkerArgs,
-                    )
-                }.result
-                .get()
-            val dest = jniLibsDir.resolve(abi)
-            dest.mkdirs()
-            workspaceTargetDir.resolve("$target/release/libsverto_core.so").copyTo(dest.resolve("libsverto_core.so"), overwrite = true)
-        }
-
-        // Generate Kotlin bindings from the first built .so
-        val firstTarget = abiToTarget[targetAbis.first()]!!
-        val soPath = workspaceTargetDir.resolve("$firstTarget/release/libsverto_core.so")
         providers
             .exec {
-                workingDir = coreDir
-                commandLine(
-                    cargo,
-                    "run",
-                    "--release",
-                    "--bin",
-                    "uniffi-bindgen",
-                    "--",
-                    "generate",
-                    "--library",
-                    soPath.absolutePath,
-                    "--language",
-                    "kotlin",
-                    "--out-dir",
-                    bindingsDir.absolutePath,
-                )
+                commandLine(listOf(buildCoreScript.absolutePath) + targetAbis)
             }.result
             .get()
     }
@@ -131,13 +77,13 @@ val isProd = appEnv == "prod"
 android {
     namespace = "com.sverto.app"
     compileSdk = 37
-    ndkVersion = "27.1.12297006"
+    ndkVersion = "27.3.13750724"
 
     defaultConfig {
         minSdk = 24
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = (project.findProperty("VERSION_CODE") as String?)?.toInt() ?: 1
+        versionName = project.findProperty("VERSION_NAME") as String? ?: "0.1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

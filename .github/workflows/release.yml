@@ -1,0 +1,180 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+    paths:
+      - android/**
+      - ios/**
+      - server/app-core/**
+      - server/shared/**
+      - server/vendor/**
+      - server/Cargo.lock
+      - rust-toolchain.toml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_type == 'branch' }}
+
+jobs:
+  changes:
+    runs-on: ubuntu-24.04
+    outputs:
+      android: ${{ steps.diff.outputs.android }}
+      ios: ${{ steps.diff.outputs.ios }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - id: diff
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            BASE=$(git describe --tags --abbrev=0 --match 'v*' HEAD^ 2>/dev/null || true)
+          else
+            BASE=$BEFORE
+          fi
+          if [ -z "$BASE" ] || ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            echo "android=true" >> "$GITHUB_OUTPUT"
+            echo "ios=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          CHANGED=$(git diff --name-only "$BASE" HEAD)
+          CORE='^(server/(app-core|shared|vendor)/|server/Cargo\.lock$|rust-toolchain\.toml$)'
+          echo "android=$(grep -qE "$CORE|^android/" <<< "$CHANGED" && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "ios=$(grep -qE "$CORE|^ios/" <<< "$CHANGED" && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
+  core:
+    needs: changes
+    if: needs.changes.outputs.android == 'true' || needs.changes.outputs.ios == 'true'
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions-rust-lang/setup-rust-toolchain@v2
+        with:
+          target: aarch64-apple-ios,aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android,i686-linux-android
+          cache-workspaces: server
+          build-warnings: ""
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-ndk
+      - name: Build Android core
+        if: needs.changes.outputs.android == 'true'
+        run: android/scripts/build-core.sh
+      - name: Build iOS core
+        if: needs.changes.outputs.ios == 'true'
+        run: ios/scripts/build-core.sh device
+      - if: needs.changes.outputs.android == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: android-core
+          path: |
+            android/app/src/main/jniLibs
+            android/app/src/main/java/uniffi
+      - if: needs.changes.outputs.ios == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: ios-core
+          path: |
+            ios/SvertoCore/Frameworks
+            ios/SvertoCore/Sources/SvertoCore
+
+  android:
+    needs: [changes, core]
+    if: needs.changes.outputs.android == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: android-core
+          path: android/app/src/main
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Build App Bundle
+        working-directory: android
+        env:
+          SVERTO_STORE_BASE64: ${{ secrets.SVERTO_STORE_BASE64 }}
+          ORG_GRADLE_PROJECT_APP_ENV: prod
+          ORG_GRADLE_PROJECT_APP_API_BASE_URL: https://api.sverto.com
+          ORG_GRADLE_PROJECT_CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY }}
+          ORG_GRADLE_PROJECT_SVERTO_STORE_FILE: ${{ runner.temp }}/release.keystore
+          ORG_GRADLE_PROJECT_SVERTO_STORE_PASSWORD: ${{ secrets.SVERTO_STORE_PASSWORD }}
+          ORG_GRADLE_PROJECT_SVERTO_KEY_ALIAS: ${{ vars.SVERTO_KEY_ALIAS }}
+          ORG_GRADLE_PROJECT_SVERTO_KEY_PASSWORD: ${{ secrets.SVERTO_KEY_PASSWORD }}
+        run: |
+          echo "$SVERTO_STORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.keystore"
+          ./gradlew bundleProdRelease -x buildRustCore --build-cache \
+            -PVERSION_NAME="${GITHUB_REF_NAME#v}" -PVERSION_CODE="$GITHUB_RUN_NUMBER"
+      - if: github.ref_type == 'tag'
+        id: gcp
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+      - if: github.ref_type == 'tag'
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJson: ${{ steps.gcp.outputs.credentials_file_path }}
+          packageName: com.sverto.app
+          releaseFiles: android/app/build/outputs/bundle/prodRelease/app-prod-release.aab
+          mappingFile: android/app/build/outputs/mapping/prodRelease/mapping.txt
+          tracks: internal
+
+  ios:
+    needs: [changes, core]
+    if: needs.changes.outputs.ios == 'true'
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: ios-core
+          path: ios/SvertoCore
+      - uses: actions/cache@v6
+        with:
+          path: ios/build/SourcePackages
+          key: spm-${{ hashFiles('ios/project.yml') }}
+      - name: Archive
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: 1
+          APP_API_BASE_URL: https://api.sverto.com
+          CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY }}
+          IOS_TEAM_ID: ${{ vars.IOS_TEAM_ID }}
+        run: |
+          brew install xcodegen
+          ios/scripts/make-lucide-assets.sh
+          ios/scripts/write-generated-xcconfig.sh
+          (cd ios && xcodegen generate --quiet)
+          xcodebuild -project ios/Sverto.xcodeproj -scheme Sverto -configuration Release -destination generic/platform=iOS \
+            -derivedDataPath ios/build -archivePath ios/build/Sverto.xcarchive -quiet archive \
+            CODE_SIGNING_ALLOWED=NO SVERTO_SKIP_CORE_BUILD=1 \
+            MARKETING_VERSION="${GITHUB_REF_NAME#v}" CURRENT_PROJECT_VERSION="$GITHUB_RUN_NUMBER"
+          python3 ios/scripts/prepare-archive-signing.py ios/build/Sverto.xcarchive
+      - name: Upload to App Store Connect
+        if: github.ref_type == 'tag'
+        env:
+          IOS_TEAM_ID: ${{ vars.IOS_TEAM_ID }}
+          APP_STORE_CONNECT_KEY: ${{ secrets.APP_STORE_CONNECT_KEY }}
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+        run: |
+          echo "$APP_STORE_CONNECT_KEY" > "$RUNNER_TEMP/AuthKey.p8"
+          sed "s/IOS_TEAM_ID/$IOS_TEAM_ID/" ios/Config/ExportOptions.plist > "$RUNNER_TEMP/ExportOptions.plist"
+          plutil -replace destination -string upload "$RUNNER_TEMP/ExportOptions.plist"
+          xcodebuild -exportArchive -archivePath ios/build/Sverto.xcarchive -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
+            -exportPath "$RUNNER_TEMP/export" -allowProvisioningUpdates \
+            -authenticationKeyPath "$RUNNER_TEMP/AuthKey.p8" \
+            -authenticationKeyID "$APP_STORE_CONNECT_KEY_ID" \
+            -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID"
