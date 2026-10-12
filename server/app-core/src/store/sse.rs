@@ -205,7 +205,7 @@ fn parse_sse_block(block: &str) -> (String, String) {
         if let Some(value) = line.strip_prefix("event:") {
             event_type = value.trim().to_string();
         } else if let Some(value) = line.strip_prefix("data:") {
-            data_lines.push(value.trim_start_matches(' '));
+            data_lines.push(value.strip_prefix(' ').unwrap_or(value));
         }
     }
 
@@ -370,4 +370,28 @@ pub async fn subscribe_chat_sse(
     });
 
     rx
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_sse_block_keeps_leading_space_of_text_delta() {
+        let (event_type, data) = parse_sse_block("event: text\ndata:  of 200 euros");
+        assert_eq!(event_type, "text");
+        assert_eq!(data, " of 200 euros");
+    }
+
+    #[test]
+    fn parse_sse_block_accepts_data_without_separator_space() {
+        let (_, data) = parse_sse_block("event: text\ndata:spend");
+        assert_eq!(data, "spend");
+    }
+
+    #[test]
+    fn parse_sse_block_joins_multiline_data() {
+        let (_, data) = parse_sse_block("event: text\ndata: first\ndata:  second");
+        assert_eq!(data, "first\n second");
+    }
 }

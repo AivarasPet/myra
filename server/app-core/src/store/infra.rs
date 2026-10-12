@@ -303,6 +303,19 @@ impl SharedInfra {
         *self.onboarding_version.lock().unwrap() = Some(auth_me.onboarding_version);
     }
 
+    pub fn update_cached_auth_me_default_asset(&self, asset_id: i32, ticker: &str) {
+        let url = format!("{}/api/auth/me", self.base_url());
+        self.cache.lock().unwrap().remove(&url);
+        let Some(body) = self.persistent_cache.get(&url) else {
+            return;
+        };
+        let Ok(mut auth_me) = serde_json::from_str::<serde_json::Value>(&body) else {
+            return;
+        };
+        auth_me["default_asset"] = serde_json::json!({ "id": asset_id, "ticker": ticker });
+        self.persistent_cache.put(&url, &auth_me.to_string());
+    }
+
     pub fn has_connectivity(&self) -> bool {
         self.connectivity.load(Ordering::Relaxed)
     }
@@ -603,6 +616,41 @@ mod tests {
         assert_eq!(infra.default_asset_id(), Some(10));
         assert_eq!(infra.default_asset_ticker().as_deref(), Some("GBP"));
         assert_eq!(infra.onboarding_version(), Some(1));
+
+        drop(infra);
+        let _ = std::fs::remove_file(db_path);
+    }
+
+    #[test]
+    fn updating_default_asset_rewrites_cached_auth_me() {
+        install_crypto_provider();
+        let db_path = std::env::temp_dir()
+            .join(format!("sverto-auth-me-{}.db", uuid::Uuid::new_v4()))
+            .to_string_lossy()
+            .into_owned();
+        let infra = SharedInfra::new(
+            "https://example.com".to_string(),
+            60,
+            db_path.clone(),
+            Arc::new(AsyncAuthProvider),
+            Arc::new(EmptyCredentialStore),
+        );
+        infra.persistent_cache.put(
+            "https://example.com/api/auth/me",
+            r#"{"user_id":"u","default_asset":{"id":10,"ticker":"GBP"},"onboarding_version":1,"role":"user","user_metadata":null}"#,
+        );
+
+        infra.update_cached_auth_me_default_asset(20, "EUR");
+
+        let body = infra
+            .persistent_cache
+            .get("https://example.com/api/auth/me")
+            .unwrap();
+        let auth_me: crate::models::AuthMe = serde_json::from_str(&body).unwrap();
+        let default_asset = auth_me.default_asset.unwrap();
+        assert_eq!(default_asset.id, 20);
+        assert_eq!(default_asset.ticker, "EUR");
+        assert_eq!(auth_me.user_id, "u");
 
         drop(infra);
         let _ = std::fs::remove_file(db_path);

@@ -1,4 +1,5 @@
 import Charts
+import SvertoCore
 import SwiftUI
 
 struct ChartPlot: View, Equatable {
@@ -84,10 +85,10 @@ private struct ChartSelectionOverlay: View {
     var body: some View {
         GeometryReader { geometry in
             if let index = selection.index,
-               series.samples.indices.contains(index),
+               series.points.indices.contains(index),
                let plotFrame = proxy.plotFrame,
-               let x = proxy.position(forX: series.samples[index].date),
-               let y = proxy.position(forY: series.samples[index].value) {
+               let x = proxy.position(forX: DateText.date(fromUnix: series.points[index].timestamp)),
+               let y = proxy.position(forY: series.points[index].value) {
                 let frame = geometry[plotFrame]
                 Rectangle()
                     .fill(Color.secondary.opacity(0.3))

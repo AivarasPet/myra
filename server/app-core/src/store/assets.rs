@@ -209,6 +209,7 @@ pub async fn update_base_asset(
     if resp.status >= 400 {
         return Err(server_error(resp.status, &resp.body));
     }
+    infra.update_cached_auth_me_default_asset(asset_id, &ticker);
     infra.set_default_asset_id(asset_id);
     infra.set_default_asset_ticker(ticker);
     Ok(())

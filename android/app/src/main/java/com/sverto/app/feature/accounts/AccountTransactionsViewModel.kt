@@ -39,11 +39,15 @@ class AccountTransactionsViewModel(
             }
         }
 
+    private var loadedAccountId: String? = null
+
     init {
         store.observeAccountTransactions(observer)
     }
 
     fun load(accountId: String) {
+        if (accountId == loadedAccountId) return
+        loadedAccountId = accountId
         viewModelScope.launch { store.loadAccountTransactions(accountId) }
     }
 

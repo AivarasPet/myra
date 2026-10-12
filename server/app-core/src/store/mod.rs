@@ -1528,6 +1528,7 @@ impl AppStore {
             }
             AuthMode::Clerk | AuthMode::Noauth => {}
         }
+        self.infra.clear_all_cache();
         self.on_sign_out();
     }
 
@@ -1570,7 +1571,68 @@ impl AppStore {
 
 #[cfg(test)]
 mod tests {
-    use super::should_resume_connectivity_work;
+    use super::*;
+
+    struct NoAuthProvider;
+
+    #[async_trait::async_trait]
+    impl AuthProvider for NoAuthProvider {
+        async fn get_token(&self) -> Option<String> {
+            None
+        }
+
+        fn get_user_id(&self) -> Option<String> {
+            None
+        }
+    }
+
+    struct EmptyCredentialStore;
+
+    impl CredentialStore for EmptyCredentialStore {
+        fn load_refresh_token(&self) -> Option<String> {
+            None
+        }
+
+        fn save_refresh_token(&self, _token: String) {}
+
+        fn clear_refresh_token(&self) {}
+    }
+
+    #[tokio::test]
+    async fn sign_out_forgets_the_previous_users_cached_identity_and_data() {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+        let db_path = std::env::temp_dir()
+            .join(format!("sverto-sign-out-{}.db", uuid::Uuid::new_v4()))
+            .to_string_lossy()
+            .into_owned();
+        let store = AppStore::new(
+            "https://example.com".to_string(),
+            60,
+            db_path.clone(),
+            Box::new(NoAuthProvider),
+            Box::new(EmptyCredentialStore),
+        );
+        store.infra.persistent_cache.put(
+            "https://example.com/api/auth/me",
+            r#"{"user_id":"deleted-user","default_asset":null,"onboarding_version":1,"role":"user","user_metadata":null}"#,
+        );
+        store.infra.persistent_cache.put(
+            "https://example.com/api/users/deleted-user/portfolio/holdings",
+            "[]",
+        );
+
+        store.sign_out().await;
+
+        assert!(store.restore_cached_me().is_none());
+        assert!(store
+            .infra
+            .persistent_cache
+            .get("https://example.com/api/users/deleted-user/portfolio/holdings")
+            .is_none());
+
+        drop(store);
+        let _ = std::fs::remove_file(db_path);
+    }
 
     #[test]
     fn connectivity_work_only_resumes_after_reconnection() {

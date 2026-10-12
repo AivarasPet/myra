@@ -31,21 +31,55 @@ final class ChartSeries {
     let ticker: String
     private let chronologicalSamples: [ChartSample]
 
+    nonisolated static let maxPlottedSamples = 600
+
     init(points: [ChartPoint], ticker: String) {
         self.points = points
         self.ticker = ticker
-        samples = points.enumerated().map {
-            let date = DateText.date(fromUnix: $0.element.timestamp)
+        samples = Self.plottedIndices(of: points).map { index in
+            let point = points[index]
+            let date = DateText.date(fromUnix: point.timestamp)
             return ChartSample(
-                id: $0.offset,
+                id: index,
                 date: date,
-                value: $0.element.value,
-                formattedValue: Money.format($0.element.value, ticker: ticker),
+                value: point.value,
+                formattedValue: Money.format(point.value, ticker: ticker),
                 accessibilityDate: Text(date, format: .dateTime.year().month().day().hour().minute())
             )
         }
-        chronologicalSamples = samples.sorted { $0.date < $1.date }
+        chronologicalSamples = samples
         domain = ChartYDomain(values: points.map(\.value))
+    }
+
+    // Swift Charts re-renders every mark on each scrub update, so plotting thousands of points
+    // (e.g. a decade of daily rates) drops scrubbing to a few frames per second. Keeping each
+    // bucket's low and high preserves the visible shape at a fraction of the marks.
+    nonisolated static func plottedIndices(of points: [ChartPoint]) -> [Int] {
+        let chronological = points.indices.sorted { points[$0].timestamp < points[$1].timestamp }
+        guard chronological.count > maxPlottedSamples, let first = chronological.first, let last = chronological.last else {
+            return chronological
+        }
+        let interior = chronological[1..<(chronological.count - 1)]
+        let bucketCount = (maxPlottedSamples - 2) / 2
+        let bucketSize = Double(interior.count) / Double(bucketCount)
+        var plotted = [first]
+        plotted.reserveCapacity(maxPlottedSamples)
+        for bucket in 0..<bucketCount {
+            let start = interior.startIndex + Int(Double(bucket) * bucketSize)
+            let end = interior.startIndex + Int(Double(bucket + 1) * bucketSize)
+            let slice = interior[start..<min(end, interior.endIndex)]
+            guard let low = slice.min(by: { points[$0].value < points[$1].value }),
+                  let high = slice.max(by: { points[$0].value < points[$1].value }) else { continue }
+            if low == high {
+                plotted.append(low)
+            } else if points[low].timestamp <= points[high].timestamp {
+                plotted.append(contentsOf: [low, high])
+            } else {
+                plotted.append(contentsOf: [high, low])
+            }
+        }
+        plotted.append(last)
+        return plotted
     }
 
     func nearestIndex(to date: Date?) -> Int? {
