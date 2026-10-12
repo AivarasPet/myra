@@ -27,10 +27,15 @@ jobs:
     outputs:
       android: ${{ steps.diff.outputs.android }}
       ios: ${{ steps.diff.outputs.ios }}
+      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+      - id: version
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          echo "version=${VERSION%%-*}" >> "$GITHUB_OUTPUT"
       - id: diff
         env:
           BEFORE: ${{ github.event.before }}
@@ -105,6 +110,8 @@ jobs:
         working-directory: android
         env:
           SVERTO_STORE_BASE64: ${{ secrets.SVERTO_STORE_BASE64 }}
+          ORG_GRADLE_PROJECT_VERSION_NAME: ${{ needs.changes.outputs.version }}
+          ORG_GRADLE_PROJECT_VERSION_CODE: ${{ github.run_number }}
           ORG_GRADLE_PROJECT_APP_ENV: prod
           ORG_GRADLE_PROJECT_APP_API_BASE_URL: https://api.sverto.com
           ORG_GRADLE_PROJECT_CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY }}
@@ -114,8 +121,7 @@ jobs:
           ORG_GRADLE_PROJECT_SVERTO_KEY_PASSWORD: ${{ secrets.SVERTO_KEY_PASSWORD }}
         run: |
           echo "$SVERTO_STORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.keystore"
-          ./gradlew bundleProdRelease -x buildRustCore --build-cache \
-            -PVERSION_NAME="${GITHUB_REF_NAME#v}" -PVERSION_CODE="$GITHUB_RUN_NUMBER"
+          ./gradlew bundleProdRelease -x buildRustCore --build-cache
       - if: github.ref_type == 'tag'
         id: gcp
         uses: google-github-actions/auth@v3
@@ -149,6 +155,7 @@ jobs:
       - name: Archive
         env:
           HOMEBREW_NO_AUTO_UPDATE: 1
+          VERSION_NAME: ${{ needs.changes.outputs.version }}
           APP_API_BASE_URL: https://api.sverto.com
           CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY }}
           IOS_TEAM_ID: ${{ vars.IOS_TEAM_ID }}
@@ -160,7 +167,7 @@ jobs:
           xcodebuild -project ios/Sverto.xcodeproj -scheme Sverto -configuration Release -destination generic/platform=iOS \
             -derivedDataPath ios/build -archivePath ios/build/Sverto.xcarchive -quiet archive \
             CODE_SIGNING_ALLOWED=NO SVERTO_SKIP_CORE_BUILD=1 \
-            MARKETING_VERSION="${GITHUB_REF_NAME#v}" CURRENT_PROJECT_VERSION="$GITHUB_RUN_NUMBER"
+            MARKETING_VERSION="$VERSION_NAME" CURRENT_PROJECT_VERSION="$GITHUB_RUN_NUMBER"
           python3 ios/scripts/prepare-archive-signing.py ios/build/Sverto.xcarchive
       - name: Upload to App Store Connect
         if: github.ref_type == 'tag'
