@@ -18,7 +18,7 @@ function FooterItem({ label, target }: LandingLink) {
       <a
         href={target}
         {...(isExternalTarget(target)
-          ? { target: "_blank", rel: "noreferrer noopener" }
+          ? { target: "_blank", rel: "noopener" }
           : {})}
         className={cn(
           "text-[12.5px] leading-[1.4] text-ink-2 transition-colors duration-instant ease-out-quick hover:text-ink",

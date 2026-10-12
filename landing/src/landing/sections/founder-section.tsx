@@ -53,7 +53,7 @@ export function FounderSection({ commitFeed }: { commitFeed: ReactNode }) {
             <a
               href={LANDING_SOURCE_URL}
               target="_blank"
-              rel="noreferrer noopener"
+              rel="noopener"
               className="rounded-chip text-[12.5px] leading-none font-medium text-ink-3 underline-offset-4 outline-none hover:text-brand hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
             >
               the commit history is public →

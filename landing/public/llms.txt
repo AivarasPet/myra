@@ -11,4 +11,4 @@ Clients: a web app, a native iOS app built with SwiftUI and a native Android app
 
 ## Source
 
-- [GitHub repository](https://github.com/EinarasGar/myra): Full source code, self-hosting guide and documentation (AGPL-3.0)
+- [GitHub repository](https://github.com/EinarasGar/sverto): Full source code, self-hosting guide and documentation (AGPL-3.0)

@@ -11,7 +11,7 @@ import { LANDING_SOURCE_URL } from "./links"
 import { MetaLabel } from "./section"
 
 const COMMITS_ENDPOINT =
-  "https://api.github.com/repos/EinarasGar/myra/commits?per_page=8"
+  "https://api.github.com/repos/EinarasGar/sverto/commits?per_page=8"
 
 const ROWS = 8
 
@@ -95,7 +95,7 @@ export function CommitFeed() {
         <a
           href={LANDING_SOURCE_URL}
           target="_blank"
-          rel="noreferrer noopener"
+          rel="noopener"
           aria-label="Open the repository on GitHub"
           className="flex items-center gap-1.5 rounded-chip text-[11px] leading-none font-medium text-ink-3 outline-none hover:text-brand focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
         >

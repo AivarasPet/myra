@@ -1,6 +1,6 @@
-export const LANDING_SOURCE_URL = "https://github.com/EinarasGar/myra"
+export const LANDING_SOURCE_URL = "https://github.com/EinarasGar/sverto"
 export const LANDING_LICENCE_URL =
-  "https://github.com/EinarasGar/myra/blob/main/LICENSE"
+  "https://github.com/EinarasGar/sverto/blob/main/LICENSE"
 
 export interface LandingLink {
   readonly label: string

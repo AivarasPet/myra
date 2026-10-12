@@ -125,11 +125,7 @@ export function PricingSection() {
               variant="outline"
               nativeButton={false}
               render={
-                <a
-                  href={LANDING_SOURCE_URL}
-                  target="_blank"
-                  rel="noreferrer noopener"
-                />
+                <a href={LANDING_SOURCE_URL} target="_blank" rel="noopener" />
               }
               className="h-11 w-full rounded-button text-[14px] font-semibold"
             >

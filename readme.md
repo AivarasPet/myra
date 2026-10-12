@@ -11,8 +11,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/EinarasGar/myra/stargazers"><img src="https://img.shields.io/github/stars/EinarasGar/myra?style=social" alt="Stars" /></a>
-  <a href="https://github.com/EinarasGar/myra/commits/main"><img src="https://img.shields.io/github/last-commit/EinarasGar/myra" alt="Last commit" /></a>
+  <a href="https://github.com/EinarasGar/sverto/stargazers"><img src="https://img.shields.io/github/stars/EinarasGar/sverto?style=social" alt="Stars" /></a>
+  <a href="https://github.com/EinarasGar/sverto/commits/main"><img src="https://img.shields.io/github/last-commit/EinarasGar/sverto" alt="Last commit" /></a>
   <img src="https://img.shields.io/badge/self--hosted-ready-green" alt="Self-hosted ready" />
 </p>
 
@@ -165,6 +165,6 @@ We collect only the telemetry needed to keep the service fast and reliable — e
 
 → [**Star on GitHub**][stars] &nbsp;|&nbsp; → [**Report an issue**][issues] &nbsp;|&nbsp; → [**Contribute**][pulls]
 
-[stars]: https://github.com/EinarasGar/myra/stargazers
-[issues]: https://github.com/EinarasGar/myra/issues
-[pulls]: https://github.com/EinarasGar/myra/pulls
+[stars]: https://github.com/EinarasGar/sverto/stargazers
+[issues]: https://github.com/EinarasGar/sverto/issues
+[pulls]: https://github.com/EinarasGar/sverto/pulls

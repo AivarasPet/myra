@@ -28,7 +28,7 @@ function NavLink({ label, target }: { label: string; target: string }) {
     <a
       href={target}
       {...(isExternalTarget(target)
-        ? { target: "_blank", rel: "noreferrer noopener" }
+        ? { target: "_blank", rel: "noopener" }
         : {})}
       className={cn(NAV_LINK, focusRing.sm)}
     >
@@ -36,7 +36,6 @@ function NavLink({ label, target }: { label: string; target: string }) {
     </a>
   )
 }
-
 
 export function LandingHeader() {
   return (

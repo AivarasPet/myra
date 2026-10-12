@@ -39,7 +39,7 @@ export function SecondaryLinkButton({
     <Button
       variant="outline"
       nativeButton={false}
-      render={<a href={href} target="_blank" rel="noreferrer noopener" />}
+      render={<a href={href} target="_blank" rel="noopener" />}
       className={cn(CTA, className)}
     >
       {children}
