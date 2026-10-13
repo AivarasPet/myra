@@ -121,7 +121,7 @@ fn corporate_action_root_symbol(row: &Value) -> Option<String> {
         .next()
         .unwrap_or(symbol)
         .trim_end_matches(|c: char| c.is_ascii_digit());
-    (!root.is_empty()).then(|| root.to_string())
+    (!root.is_empty()).then(|| root.replace(' ', "-"))
 }
 
 pub fn map_row(raw: &Value) -> Option<MappedTransaction> {
@@ -480,6 +480,15 @@ mod tests {
             assert_eq!(tx.isin, None, "{symbol}");
             assert_eq!(tx.quantity, None, "{symbol}");
         }
+    }
+
+    #[test]
+    fn corporate_action_root_symbol_uses_dashed_share_class() {
+        let tx = provider(map_cash_transaction(&corporate_action_dividend(
+            "PBR A.DVR",
+            "0.33",
+        )));
+        assert_eq!(tx.underlying_symbol.as_deref(), Some("PBR-A"));
     }
 
     #[test]

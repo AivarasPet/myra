@@ -149,8 +149,13 @@ pub fn get_asset_ids_by_isins(
         .into()
 }
 
-/// Candidates whose ticker root (the part before the first `.`, case-insensitive) matches
-/// one of `root_symbols`, with the facts needed to pick one: holdings and base currency.
+/// Stocks, mutual funds and ETFs (ids fixed by the reference-data migration): the only asset
+/// types a corporate-action pseudo-instrument stands in for.
+const STOCK_AND_FUND_ASSET_TYPE_IDS: [i32; 3] = [2, 4, 5];
+
+/// Stock and fund candidates whose ticker root (the part before the first `.`,
+/// case-insensitive) matches one of `root_symbols`, with the facts needed to pick one: whether
+/// the account or the user currently holds a non-zero position, and the base currency.
 #[macros::named_query]
 pub fn get_asset_candidates_by_root_symbols(
     user_id: Uuid,
@@ -159,9 +164,12 @@ pub fn get_asset_candidates_by_root_symbols(
 ) -> DbQueryWithValues {
     let root_symbol = || Expr::cust("LOWER(SPLIT_PART(\"assets\".\"ticker\", '.', 1))");
     let root_symbols: Vec<String> = root_symbols.iter().map(|s| s.to_lowercase()).collect();
-    let entries_of_asset = || {
+    let position_of_asset = || {
         Query::select()
-            .expr(Expr::val(1))
+            .expr(Func::coalesce([
+                SimpleExpr::from(Func::sum(Expr::col((EntryIden::Table, EntryIden::Quantity)))),
+                Expr::val(0).into(),
+            ]))
             .from(EntryIden::Table)
             .and_where(
                 Expr::col((EntryIden::Table, EntryIden::AssetId))
@@ -169,10 +177,10 @@ pub fn get_asset_candidates_by_root_symbols(
             )
             .to_owned()
     };
-    let held_in_account = entries_of_asset()
+    let held_in_account = position_of_asset()
         .and_where(Expr::col((EntryIden::Table, EntryIden::AccountId)).eq(account_id))
         .to_owned();
-    let held_by_user = entries_of_asset()
+    let held_by_user = position_of_asset()
         .inner_join(
             AccountIden::Table,
             Expr::col((AccountIden::Table, AccountIden::Id))
@@ -188,8 +196,14 @@ pub fn get_asset_candidates_by_root_symbols(
             Expr::col((AssetsAliasIden::BaseAssetJoin, AssetsIden::Ticker)),
             Alias::new("base_currency"),
         )
-        .expr_as(Expr::exists(held_in_account), Alias::new("held_in_account"))
-        .expr_as(Expr::exists(held_by_user), Alias::new("held_by_user"))
+        .expr_as(
+            SimpleExpr::SubQuery(None, Box::new(held_in_account.into_sub_query_statement())).ne(0),
+            Alias::new("held_in_account"),
+        )
+        .expr_as(
+            SimpleExpr::SubQuery(None, Box::new(held_by_user.into_sub_query_statement())).ne(0),
+            Alias::new("held_by_user"),
+        )
         .from(AssetsIden::Table)
         .join_as(
             sea_query::JoinType::LeftJoin,
@@ -199,6 +213,10 @@ pub fn get_asset_candidates_by_root_symbols(
                 .equals((AssetsIden::Table, AssetsIden::BasePairId)),
         )
         .and_where(root_symbol().is_in(root_symbols))
+        .and_where(
+            Expr::col((AssetsIden::Table, AssetsIden::AssetType))
+                .is_in(STOCK_AND_FUND_ASSET_TYPE_IDS),
+        )
         .and_where(
             Expr::col((AssetsIden::Table, AssetsIden::UserId))
                 .is_null()

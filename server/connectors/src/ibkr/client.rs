@@ -65,7 +65,9 @@ impl IbkrFlexClient {
 
         let mut accepted = None;
         for attempt in 0..MAX_ATTEMPTS {
-            match parse_reply(&self.get(SEND_REQUEST_URL, &params).await?)? {
+            let reply = parse_reply(&self.get(SEND_REQUEST_URL, &params).await?)?;
+            log_reply("SendRequest", period, attempt, &reply);
+            match reply {
                 FlexReply::Accepted { reference_code } => {
                     accepted = Some(reference_code);
                     break;
@@ -94,7 +96,9 @@ impl IbkrFlexClient {
         ];
         for attempt in 0..MAX_ATTEMPTS {
             tokio::time::sleep(retry_delay(attempt)).await;
-            match parse_reply(&self.get(GET_STATEMENT_URL, &statement_params).await?)? {
+            let reply = parse_reply(&self.get(GET_STATEMENT_URL, &statement_params).await?)?;
+            log_reply("GetStatement", period, attempt, &reply);
+            match reply {
                 FlexReply::Statement(rows) => return Ok(Some(rows)),
                 FlexReply::Failed {
                     code: Some(STATEMENT_NOT_AVAILABLE),
@@ -135,6 +139,34 @@ impl IbkrFlexClient {
     }
 }
 
+/// One line per Flex reply, so a failed or empty window can be explained from the logs. Never
+/// logs the token or the reference code (which fetches the statement together with the token).
+fn log_reply(step: &str, period: Option<(Date, Date)>, attempt: u32, reply: &FlexReply) {
+    let period = period.map(|(from, to)| format!("{from}..{to}"));
+    match reply {
+        FlexReply::Accepted { .. } => {
+            tracing::info!(step, ?period, attempt, "IBKR flex request accepted");
+        }
+        FlexReply::Statement(rows) => {
+            tracing::info!(
+                step,
+                ?period,
+                attempt,
+                rows = rows.len(),
+                "IBKR flex statement received"
+            );
+        }
+        FlexReply::Failed { code, message }
+            if code.is_some_and(|c| RETRYABLE_CODES.contains(&c)) =>
+        {
+            tracing::info!(step, ?period, attempt, ?code, %message, "IBKR flex statement not ready");
+        }
+        FlexReply::Failed { code, message } => {
+            tracing::warn!(step, ?period, attempt, ?code, %message, "IBKR flex request failed");
+        }
+    }
+}
+
 fn retry_delay(attempt: u32) -> Duration {
     INITIAL_RETRY_DELAY * 2u32.pow(attempt)
 }
@@ -157,7 +189,7 @@ impl Connector for IbkrFlexClient {
         // Flex data is end-of-day, so the window stops at yesterday (UTC is ahead of
         // the US exchange day IBKR reports in).
         let last_day = OffsetDateTime::now_utc().date() - time::Duration::days(1);
-        let window_start = cursor
+        let mut window_start = cursor
             .as_ref()
             .and_then(|c| c.as_value().get("from")?.as_str().map(str::to_string))
             .map(|s| Date::parse(&s, FLEX_DATE))
@@ -165,6 +197,18 @@ impl Connector for IbkrFlexClient {
             .or_else(|| from.map(|f| f.date()))
             .unwrap_or(last_day - time::Duration::days(MAX_HISTORY_DAYS))
             .min(last_day);
+        // A walk spanning several windows (a first sync) starts at the history floor, usually
+        // before the account opened, where Flex refuses the window (1003). Start at the opening
+        // date instead; one-window incremental syncs skip the extra request.
+        if cursor.is_none() && window_start + time::Duration::days(MAX_WINDOW_DAYS) < last_day {
+            match self.account_opened().await {
+                Ok(opened) => window_start = window_start.max(opened.min(last_day)),
+                Err(e) => tracing::warn!(
+                    error = %e,
+                    "IBKR flex account opening date unavailable; walking from the history start"
+                ),
+            }
+        }
         let window_end = (window_start + time::Duration::days(MAX_WINDOW_DAYS)).min(last_day);
 
         let mut next_start = window_end + time::Duration::days(1);
