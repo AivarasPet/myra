@@ -8,7 +8,8 @@ pub enum LimitScope {
 
 /// Total classification of every AI failure. Constructed only via the
 /// `From` impls below and `AiError::unknown` — classification lives in
-/// this file and nowhere else.
+/// this file, except for worker jobs whose failures are not AI calls (their
+/// `WorkerJob::classify_error`).
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum AiError {
     #[error("AI usage limit reached")]

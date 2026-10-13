@@ -32,6 +32,7 @@ pub struct ConnectorBindingRow {
     pub last_sync_at: Option<OffsetDateTime>,
     pub last_sync_status: Option<String>,
     pub last_sync_error: Option<String>,
+    pub sync_in_progress: bool,
     pub created_at: OffsetDateTime,
     pub updated_at: OffsetDateTime,
 }

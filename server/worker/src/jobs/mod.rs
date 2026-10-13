@@ -27,6 +27,10 @@ pub trait WorkerJob: Serialize + DeserializeOwned + Send + Sync + Unpin + Sized 
         RetryPolicy::standard()
     }
 
+    fn classify_error(error: &anyhow::Error) -> AiError {
+        retry::extract_ai_error(error)
+    }
+
     fn decide(error: &anyhow::Error, attempts: i32) -> RetryDecision {
         retry::default_decision(error, attempts, &Self::retry_policy())
     }
@@ -84,7 +88,7 @@ pub async fn run_job<T: WorkerJob>(
     };
 
     let decision = T::decide(&error, attempts);
-    let ai_error = retry::extract_ai_error(&error);
+    let ai_error = T::classify_error(&error);
     match &decision {
         RetryDecision::RetryAfter(delay) => {
             tracing::warn!(job = T::NAME, attempts, retry_in = ?delay, duration_ms = started.elapsed().as_millis() as u64, error = ?error, "job failed, retry scheduled");

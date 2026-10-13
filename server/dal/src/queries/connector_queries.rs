@@ -6,6 +6,10 @@ use sea_query_sqlx::SqlxBinder;
 use sqlx::types::Uuid;
 
 use super::DbQueryWithValues;
+
+/// A sync claim older than this is treated as left behind by a crashed sync. Running syncs refresh
+/// their claim after every fetched page.
+const PROVIDER_ACCOUNT_CLAIM_EXPIRY_MINUTES: i32 = 10;
 use crate::{
     idens::{
         asset_idens::AssetsIden,
@@ -330,6 +334,13 @@ pub fn get_connector_bindings(params: GetConnectorBindingsParams) -> DbQueryWith
             ConnectorProviderAccountIden::Table,
             ConnectorProviderAccountIden::LastSyncError,
         ))
+        .expr_as(
+            Expr::cust_with_values(
+                "COALESCE(connector_provider_account.sync_claimed_at > now() - make_interval(mins => $1::int), false)",
+                [PROVIDER_ACCOUNT_CLAIM_EXPIRY_MINUTES],
+            ),
+            Alias::new("sync_in_progress"),
+        )
         .column((ConnectorBindingIden::Table, ConnectorBindingIden::CreatedAt))
         .column((ConnectorBindingIden::Table, ConnectorBindingIden::UpdatedAt))
         .from(ConnectorBindingIden::Table)
@@ -506,10 +517,7 @@ pub fn update_binding_projection(
 /// Claims a provider account for a fetch walk (single-flight). Zero rows affected means
 /// another fetch holds the claim; stale claims expire after `expiry_minutes`.
 #[macros::named_query]
-pub fn claim_provider_account_for_fetch(
-    provider_account_ref: Uuid,
-    expiry_minutes: i64,
-) -> DbQueryWithValues {
+pub fn claim_provider_account_for_fetch(provider_account_ref: Uuid) -> DbQueryWithValues {
     Query::update()
         .table(ConnectorProviderAccountIden::Table)
         .value(
@@ -535,8 +543,36 @@ pub fn claim_provider_account_for_fetch(
             ))
             .lt(Expr::cust_with_values(
                 "now() - make_interval(mins => $1::int)",
-                [expiry_minutes],
+                [PROVIDER_ACCOUNT_CLAIM_EXPIRY_MINUTES],
             ))),
+        )
+        .build_sqlx(PostgresQueryBuilder)
+        .into()
+}
+
+/// Heartbeat of a running fetch: keeps its claim fresher than the expiry, so expiry only frees
+/// claims of crashed syncs. A released claim stays released.
+#[macros::named_query]
+pub fn refresh_provider_account_fetch_claim(provider_account_ref: Uuid) -> DbQueryWithValues {
+    Query::update()
+        .table(ConnectorProviderAccountIden::Table)
+        .value(
+            ConnectorProviderAccountIden::SyncClaimedAt,
+            Expr::cust("now()"),
+        )
+        .and_where(
+            Expr::col((
+                ConnectorProviderAccountIden::Table,
+                ConnectorProviderAccountIden::Id,
+            ))
+            .eq(provider_account_ref),
+        )
+        .and_where(
+            Expr::col((
+                ConnectorProviderAccountIden::Table,
+                ConnectorProviderAccountIden::SyncClaimedAt,
+            ))
+            .is_not_null(),
         )
         .build_sqlx(PostgresQueryBuilder)
         .into()

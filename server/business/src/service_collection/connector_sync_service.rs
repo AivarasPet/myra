@@ -136,9 +136,17 @@ impl ConnectorSyncService {
         self.claim_provider_account(binding.provider_account_ref)
             .await?;
 
-        let connector = self
+        let connector = match self
             .build_provider_connector(&connection, &binding, None)
-            .await?;
+            .await
+        {
+            Ok(connector) => connector,
+            Err(e) => {
+                self.release_provider_account_claim(binding.provider_account_ref)
+                    .await;
+                return Err(e);
+            }
+        };
 
         match self
             .run_sync(
@@ -312,7 +320,14 @@ impl ConnectorSyncService {
         connector: &dyn Connector,
         params: SyncParams,
     ) -> anyhow::Result<FetchPhaseOutcome> {
-        let store = self.store_for_provider_account(provider_account_ref, connection)?;
+        let store = match self.store_for_provider_account(provider_account_ref, connection) {
+            Ok(store) => store,
+            Err(e) => {
+                self.release_provider_account_claim(provider_account_ref)
+                    .await;
+                return Err(e);
+            }
+        };
         let walk_started_at = OffsetDateTime::now_utc();
 
         match connector.sync(&store, params).await {
@@ -430,19 +445,23 @@ impl ConnectorSyncService {
             .db
             .execute_with_rows_affected(connector_queries::claim_provider_account_for_fetch(
                 provider_account_ref,
-                10,
             ))
             .await?;
         if claimed == 0 {
             return Ok(());
         }
 
-        let store = self.store_for_provider_account(provider_account_ref, connection)?;
-        let connector = store
-            .provider_kind()
-            .provider()
-            .build_connector(external_account_id, CredentialSource::Stored, &store)
-            .await?;
+        let connector = match self
+            .build_backfill_connector(provider_account_ref, connection, external_account_id)
+            .await
+        {
+            Ok(connector) => connector,
+            Err(e) => {
+                self.release_provider_account_claim(provider_account_ref)
+                    .await;
+                return Err(e);
+            }
+        };
 
         let params = SyncParams {
             synced_through: None,
@@ -498,12 +517,42 @@ impl ConnectorSyncService {
         }
     }
 
+    async fn build_backfill_connector(
+        &self,
+        provider_account_ref: Uuid,
+        connection: &ConnectorConnectionDto,
+        external_account_id: &str,
+    ) -> anyhow::Result<Box<dyn Connector>> {
+        let store = self.store_for_provider_account(provider_account_ref, connection)?;
+        store
+            .provider_kind()
+            .provider()
+            .build_connector(external_account_id, CredentialSource::Stored, &store)
+            .await
+    }
+
+    /// For exits before the fetch phase records its outcome, which releases the claim itself.
+    async fn release_provider_account_claim(&self, provider_account_ref: Uuid) {
+        if let Err(e) = self
+            .db
+            .execute(connector_queries::release_provider_account_fetch_claim(
+                provider_account_ref,
+            ))
+            .await
+        {
+            tracing::warn!(
+                provider_account_ref = %provider_account_ref,
+                error = ?e,
+                "failed to release the provider account sync claim"
+            );
+        }
+    }
+
     async fn claim_provider_account(&self, provider_account_ref: Uuid) -> anyhow::Result<()> {
         let claimed = self
             .db
             .execute_with_rows_affected(connector_queries::claim_provider_account_for_fetch(
                 provider_account_ref,
-                10,
             ))
             .await?;
         if claimed == 0 {

@@ -4102,6 +4102,12 @@ export interface ConnectorBinding {
      */
     'sverto_account_id': string;
     /**
+     * A sync holds the provider account (its claim is fresh); another sync would wait.
+     * @type {boolean}
+     * @memberof ConnectorBinding
+     */
+    'sync_in_progress': boolean;
+    /**
      * 
      * @type {number}
      * @memberof ConnectorBinding
