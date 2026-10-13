@@ -41,6 +41,8 @@ pub struct IbkrFlexClient {
     http: reqwest::Client,
     query_id: String,
     token: String,
+    /// Read once per sync: each read is a full Flex statement request.
+    account_opened: tokio::sync::OnceCell<Date>,
 }
 
 impl IbkrFlexClient {
@@ -49,6 +51,7 @@ impl IbkrFlexClient {
             http: reqwest::Client::new(),
             query_id,
             token,
+            account_opened: tokio::sync::OnceCell::new(),
         }
     }
 
@@ -114,15 +117,20 @@ impl IbkrFlexClient {
     }
 
     async fn account_opened(&self) -> Result<Date> {
-        let rows = self
-            .fetch_statement(None)
-            .await?
-            .ok_or_else(|| anyhow::anyhow!("IBKR flex statement is not available"))?;
-        parse_account_opened(&rows).ok_or_else(|| {
-            anyhow::anyhow!(
-                "IBKR flex query has no account opening date; add the Account Information section"
-            )
-        })
+        self.account_opened
+            .get_or_try_init(|| async {
+                let rows = self
+                    .fetch_statement(None)
+                    .await?
+                    .ok_or_else(|| anyhow::anyhow!("IBKR flex statement is not available"))?;
+                parse_account_opened(&rows).ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "IBKR flex query has no account opening date; add the Account Information section"
+                    )
+                })
+            })
+            .await
+            .copied()
     }
 
     async fn get(&self, url: &str, params: &[(&str, String)]) -> Result<String> {

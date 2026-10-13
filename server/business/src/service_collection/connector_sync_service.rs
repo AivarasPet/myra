@@ -451,9 +451,15 @@ impl ConnectorSyncService {
             return Ok(());
         }
 
-        let connector = match self
-            .build_backfill_connector(provider_account_ref, connection, external_account_id)
-            .await
+        let connector = match async {
+            let store = self.store_for_provider_account(provider_account_ref, connection)?;
+            store
+                .provider_kind()
+                .provider()
+                .build_connector(external_account_id, CredentialSource::Stored, &store)
+                .await
+        }
+        .await
         {
             Ok(connector) => connector,
             Err(e) => {
@@ -515,20 +521,6 @@ impl ConnectorSyncService {
                     .to_string(),
             })),
         }
-    }
-
-    async fn build_backfill_connector(
-        &self,
-        provider_account_ref: Uuid,
-        connection: &ConnectorConnectionDto,
-        external_account_id: &str,
-    ) -> anyhow::Result<Box<dyn Connector>> {
-        let store = self.store_for_provider_account(provider_account_ref, connection)?;
-        store
-            .provider_kind()
-            .provider()
-            .build_connector(external_account_id, CredentialSource::Stored, &store)
-            .await
     }
 
     /// For exits before the fetch phase records its outcome, which releases the claim itself.

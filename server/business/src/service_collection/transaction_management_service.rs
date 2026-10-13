@@ -31,7 +31,7 @@ use crate::{
         individual_transaction_filters_dto::IndividualTransactionFiltersDto,
         page_of_results_dto::PageOfResultsDto,
         paging_dto::{CursorPageOfResultsDto, PaginationModeDto, PagingDto},
-        transaction_dto::TransactionDto,
+        transaction_dto::{TransactionDto, TransactionVisibilityDto},
         transaction_group_dto::TransactionGroupDto,
     },
     entities::transactions::{
@@ -610,12 +610,12 @@ impl TransactionManagementService {
             .await?;
 
         self.db
-            .execute(
-                transaction_data_queries::clear_transaction_action_visibility(
-                    user_id,
-                    transaction_id,
-                ),
-            )
+            .execute(transaction_data_queries::replace_transaction_visibility(
+                user_id,
+                transaction_id,
+                TransactionVisibilityDto::Action.as_str().to_string(),
+                TransactionVisibilityDto::Default.as_str().to_string(),
+            ))
             .await?;
 
         Ok(())

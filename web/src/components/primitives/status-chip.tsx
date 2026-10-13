@@ -1,5 +1,4 @@
 import type * as React from "react"
-import { CircleAlert } from "lucide-react"
 import { cva, type VariantProps } from "class-variance-authority"
 
 import { cn } from "@/lib/utils"
@@ -40,6 +39,9 @@ export function StatusChip({
       className={cn(chipVariants({ size }), word.tone, className)}
       {...props}
     >
+      {"icon" in word ? (
+        <word.icon aria-hidden className="mr-[3px] size-[10px] flex-none" />
+      ) : null}
       {word.label}
     </span>
   )
@@ -58,28 +60,6 @@ export function MetaChip({
       className={cn(chipVariants({ size }), META_CHIP_TONES[tone], className)}
       {...props}
     />
-  )
-}
-
-export function NeedsActionChip({
-  size,
-  className,
-  ...props
-}: Omit<React.ComponentProps<"span">, "children"> &
-  VariantProps<typeof chipVariants>) {
-  return (
-    <span
-      data-slot="needs-action-chip"
-      className={cn(
-        chipVariants({ size }),
-        "gap-[3px] border-attention bg-attention-dim text-attention",
-        className
-      )}
-      {...props}
-    >
-      <CircleAlert aria-hidden className="size-[10px] flex-none" />
-      Needs action
-    </span>
   )
 }
 

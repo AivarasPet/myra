@@ -206,12 +206,10 @@ pub async fn list_aspsps(
     Ok(Json(ListAspspsResponseViewModel {
         aspsps: aspsps
             .into_iter()
-            .map(
-                |a| shared::view_models::connectors::list_aspsps::AspspViewModel {
-                    name: a.name,
-                    country: a.country,
-                },
-            )
+            .map(|a| shared::view_models::connectors::list_aspsps::AspspViewModel {
+                name: a.name,
+                country: a.country,
+            })
             .collect(),
     }))
 }

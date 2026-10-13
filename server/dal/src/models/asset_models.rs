@@ -2,6 +2,9 @@ use sqlx::types::{time::OffsetDateTime, Decimal, Uuid};
 
 pub mod asset_type_ids {
     pub const CURRENCY: i32 = 1;
+    pub const STOCK: i32 = 2;
+    pub const MUTUAL_FUND: i32 = 4;
+    pub const ETF: i32 = 5;
     pub const CRYPTO: i32 = 7;
 }
 

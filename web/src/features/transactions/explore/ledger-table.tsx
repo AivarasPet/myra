@@ -22,7 +22,6 @@ import {
   HIT_TARGET,
   InfiniteLoadFooter,
   InlineRowAction,
-  NeedsActionChip,
   rowActivation,
   RowGlyph,
   StatusChip,
@@ -195,7 +194,7 @@ function Description({
           <StatusChip status="unreviewed" size="row" className="flex-none" />
         ) : null}
         {row.needsAction ? (
-          <NeedsActionChip size="row" className="flex-none" />
+          <StatusChip status="needsAction" size="row" className="flex-none" />
         ) : null}
       </span>
       {secondary === null || secondary === undefined ? null : (

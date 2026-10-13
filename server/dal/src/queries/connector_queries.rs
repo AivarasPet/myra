@@ -7,9 +7,6 @@ use sqlx::types::Uuid;
 
 use super::DbQueryWithValues;
 
-/// A sync claim older than this is treated as left behind by a crashed sync. Running syncs refresh
-/// their claim after every fetched page.
-const PROVIDER_ACCOUNT_CLAIM_EXPIRY_MINUTES: i32 = 10;
 use crate::{
     idens::{
         asset_idens::AssetsIden,
@@ -32,6 +29,10 @@ use crate::{
         GetRawPagesParamsSearchType,
     },
 };
+
+/// A sync claim older than this is treated as left behind by a crashed sync. Running syncs refresh
+/// their claim after every fetched page; one IBKR Flex page can take ~15 minutes of retries.
+const PROVIDER_ACCOUNT_CLAIM_EXPIRY_MINUTES: i32 = 20;
 
 #[macros::named_query]
 pub fn get_connector_provider_id_by_kind(kind: String) -> DbQueryWithValues {

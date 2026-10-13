@@ -32,7 +32,13 @@ pub trait WorkerJob: Serialize + DeserializeOwned + Send + Sync + Unpin + Sized 
     }
 
     fn decide(error: &anyhow::Error, attempts: i32) -> RetryDecision {
-        retry::default_decision(error, attempts, &Self::retry_policy())
+        retry::decide(
+            &Self::classify_error(error).retry_class(),
+            attempts,
+            &Self::retry_policy(),
+            time::OffsetDateTime::now_utc(),
+            retry::random_global_jitter(),
+        )
     }
 
     async fn before_run(&self, _providers: &ServiceProviders) -> anyhow::Result<()> {

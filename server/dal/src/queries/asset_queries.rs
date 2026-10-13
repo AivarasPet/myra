@@ -2,8 +2,8 @@ use std::collections::{HashMap, HashSet};
 
 use sea_query::{
     extension::postgres::PgExpr, Alias, Asterisk, CommonTableExpression, Cond, Expr, ExprTrait,
-    Func, OnConflict, Order, PostgresQueryBuilder, Query, QueryStatementBuilder, SimpleExpr, Value,
-    WindowStatement, WithClause,
+    Func, OnConflict, Order, PostgresQueryBuilder, Query, QueryStatementBuilder, SelectStatement,
+    SimpleExpr, Value, WindowStatement, WithClause,
 };
 use sea_query_sqlx::SqlxBinder;
 use sqlx::types::{time::OffsetDateTime, Uuid};
@@ -124,20 +124,7 @@ pub fn get_asset_ids_by_isins(
     Query::select()
         .column((AssetsIden::Table, AssetsIden::Id))
         .column((AssetsIden::Table, AssetsIden::Isin))
-        .expr_as(
-            Expr::exists(
-                Query::select()
-                    .expr(Expr::val(1))
-                    .from(EntryIden::Table)
-                    .and_where(
-                        Expr::col((EntryIden::Table, EntryIden::AssetId))
-                            .equals((AssetsIden::Table, AssetsIden::Id)),
-                    )
-                    .and_where(Expr::col((EntryIden::Table, EntryIden::AccountId)).eq(account_id))
-                    .take(),
-            ),
-            Alias::new("held_in_account"),
-        )
+        .expr_as(held_in_account(account_id), Alias::new("held_in_account"))
         .from(AssetsIden::Table)
         .and_where(Expr::col((AssetsIden::Table, AssetsIden::Isin)).is_in(isins))
         .and_where(
@@ -149,9 +136,51 @@ pub fn get_asset_ids_by_isins(
         .into()
 }
 
-/// Stocks, mutual funds and ETFs (ids fixed by the reference-data migration): the only asset
-/// types a corporate-action pseudo-instrument stands in for.
-const STOCK_AND_FUND_ASSET_TYPE_IDS: [i32; 3] = [2, 4, 5];
+/// The asset's summed quantity over `entries`, for a caller that narrows `entries` to an account
+/// or a user.
+fn position_of_asset() -> SelectStatement {
+    Query::select()
+        .expr(Func::coalesce([
+            SimpleExpr::from(Func::sum(Expr::col((
+                EntryIden::Table,
+                EntryIden::Quantity,
+            )))),
+            Expr::val(0).into(),
+        ]))
+        .from(EntryIden::Table)
+        .and_where(
+            Expr::col((EntryIden::Table, EntryIden::AssetId))
+                .equals((AssetsIden::Table, AssetsIden::Id)),
+        )
+        .to_owned()
+}
+
+fn is_held(position: SelectStatement) -> SimpleExpr {
+    SimpleExpr::SubQuery(None, Box::new(position.into_sub_query_statement())).ne(0)
+}
+
+/// The account currently holds a non-zero position in the asset.
+fn held_in_account(account_id: Uuid) -> SimpleExpr {
+    is_held(
+        position_of_asset()
+            .and_where(Expr::col((EntryIden::Table, EntryIden::AccountId)).eq(account_id))
+            .to_owned(),
+    )
+}
+
+/// The user currently holds a non-zero position in the asset across their accounts.
+fn held_by_user(user_id: Uuid) -> SimpleExpr {
+    is_held(
+        position_of_asset()
+            .inner_join(
+                AccountIden::Table,
+                Expr::col((AccountIden::Table, AccountIden::Id))
+                    .equals((EntryIden::Table, EntryIden::AccountId)),
+            )
+            .and_where(Expr::col((AccountIden::Table, AccountIden::UserId)).eq(user_id))
+            .to_owned(),
+    )
+}
 
 /// Stock and fund candidates whose ticker root (the part before the first `.`,
 /// case-insensitive) matches one of `root_symbols`, with the facts needed to pick one: whether
@@ -164,30 +193,6 @@ pub fn get_asset_candidates_by_root_symbols(
 ) -> DbQueryWithValues {
     let root_symbol = || Expr::cust("LOWER(SPLIT_PART(\"assets\".\"ticker\", '.', 1))");
     let root_symbols: Vec<String> = root_symbols.iter().map(|s| s.to_lowercase()).collect();
-    let position_of_asset = || {
-        Query::select()
-            .expr(Func::coalesce([
-                SimpleExpr::from(Func::sum(Expr::col((EntryIden::Table, EntryIden::Quantity)))),
-                Expr::val(0).into(),
-            ]))
-            .from(EntryIden::Table)
-            .and_where(
-                Expr::col((EntryIden::Table, EntryIden::AssetId))
-                    .equals((AssetsIden::Table, AssetsIden::Id)),
-            )
-            .to_owned()
-    };
-    let held_in_account = position_of_asset()
-        .and_where(Expr::col((EntryIden::Table, EntryIden::AccountId)).eq(account_id))
-        .to_owned();
-    let held_by_user = position_of_asset()
-        .inner_join(
-            AccountIden::Table,
-            Expr::col((AccountIden::Table, AccountIden::Id))
-                .equals((EntryIden::Table, EntryIden::AccountId)),
-        )
-        .and_where(Expr::col((AccountIden::Table, AccountIden::UserId)).eq(user_id))
-        .to_owned();
 
     Query::select()
         .column((AssetsIden::Table, AssetsIden::Id))
@@ -196,14 +201,8 @@ pub fn get_asset_candidates_by_root_symbols(
             Expr::col((AssetsAliasIden::BaseAssetJoin, AssetsIden::Ticker)),
             Alias::new("base_currency"),
         )
-        .expr_as(
-            SimpleExpr::SubQuery(None, Box::new(held_in_account.into_sub_query_statement())).ne(0),
-            Alias::new("held_in_account"),
-        )
-        .expr_as(
-            SimpleExpr::SubQuery(None, Box::new(held_by_user.into_sub_query_statement())).ne(0),
-            Alias::new("held_by_user"),
-        )
+        .expr_as(held_in_account(account_id), Alias::new("held_in_account"))
+        .expr_as(held_by_user(user_id), Alias::new("held_by_user"))
         .from(AssetsIden::Table)
         .join_as(
             sea_query::JoinType::LeftJoin,
@@ -214,8 +213,11 @@ pub fn get_asset_candidates_by_root_symbols(
         )
         .and_where(root_symbol().is_in(root_symbols))
         .and_where(
-            Expr::col((AssetsIden::Table, AssetsIden::AssetType))
-                .is_in(STOCK_AND_FUND_ASSET_TYPE_IDS),
+            Expr::col((AssetsIden::Table, AssetsIden::AssetType)).is_in([
+                asset_type_ids::STOCK,
+                asset_type_ids::MUTUAL_FUND,
+                asset_type_ids::ETF,
+            ]),
         )
         .and_where(
             Expr::col((AssetsIden::Table, AssetsIden::UserId))
