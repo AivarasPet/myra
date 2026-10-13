@@ -174,6 +174,12 @@ impl ProviderTransactionImport {
                     })
                 }
             }
+            // TODO: import dividend reversals (e.g. IBKR undoing a corporate-action dividend). A Cash
+            // Dividend cannot hold a negative amount, so they are skipped and logged as unresolvable
+            // for now, which leaves the account's cash off by the reversed amount.
+            (None, Some(_)) if tx.amount.is_sign_negative() => {
+                return Err("negative dividend (reversal) is not supported");
+            }
             (None, Some(_)) => {
                 let Some(instrument_asset_id) = instrument_asset_id else {
                     return Err("dividend origin has no matching asset");
