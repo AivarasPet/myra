@@ -8,7 +8,6 @@ pub enum TransactionIden {
     DateTransacted,
     TypeId,
     Visibility,
-    ReviewReason,
 }
 
 #[allow(dead_code)]
@@ -83,7 +82,6 @@ impl Iden for TransactionIden {
             Self::TypeId => "type_id",
             Self::DateTransacted => "date_transacted",
             Self::Visibility => "visibility",
-            Self::ReviewReason => "review_reason",
         }
     }
 }

@@ -88,7 +88,6 @@ impl TransactionProcessor for AssetSaleTransaction {
             dto.transaction_id,
             dto.date,
             dto.visibility,
-            dto.review_reason,
             vec![],
         );
         base.add_fee_entries_from_dtos(dto.fee_entries)?;
@@ -178,7 +177,6 @@ mod tests {
         TransactionDto {
             transaction_id: None,
             visibility: crate::dtos::transaction_dto::TransactionVisibilityDto::Default,
-            review_reason: None,
             date: datetime!(2024-05-10 00:00:00 UTC),
             fee_entries,
             transaction_type: TransactionTypeDto::AssetSale(AssetSaleMetadataDto {
@@ -207,7 +205,6 @@ mod tests {
             user_id,
             type_id: DatabaseTransactionTypes::AssetSale,
             visibility: "default".to_string(),
-            review_reason: None,
             date_transacted: datetime!(2024-05-10 00:00:00 UTC),
         }
     }

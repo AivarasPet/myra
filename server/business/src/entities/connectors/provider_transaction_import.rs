@@ -195,7 +195,6 @@ impl ProviderTransactionImport {
             transaction_id: None,
             date: tx.date,
             visibility: self.visibility,
-            review_reason: None,
             fee_entries: vec![],
             transaction_type,
         })

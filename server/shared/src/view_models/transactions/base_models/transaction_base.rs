@@ -7,7 +7,6 @@ use crate::view_models::transactions::base_models::transaction_id::{
     RequiredTransactionId, TransactionId,
 };
 
-use super::review_reason::ReviewReason;
 use super::transaction_fee::{
     IdentifiableTransactionFeeViewModel, RequiredIdentifiableTransactionFeeViewModel,
     TransactionFeeViewModel,
@@ -65,12 +64,6 @@ pub struct IdentifiableTransactionBase<B, I> {
     #[serde(default)]
     pub visibility: TransactionVisibility,
 
-    /// Set when the transaction needs the user's review, e.g. a sync's placeholder opening buy.
-    /// Cleared by any update of the transaction.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schema(nullable = false)]
-    pub review_reason: Option<ReviewReason>,
-
     /// Date when the transaction occured.
     #[serde(flatten)]
     pub base: B,
@@ -86,7 +79,6 @@ impl From<TransactionDto> for RequiredIdentifiableTransactionBaseWithIdentifiabl
                     .expect("Transaction Id mut not be None"),
             ),
             visibility: value.visibility.into(),
-            review_reason: value.review_reason.map(Into::into),
             base: value.into(),
         }
     }
@@ -98,7 +90,6 @@ impl From<TransactionDto> for IdentifiableTransactionBaseWithIdentifiableEntries
         Self {
             transaction_id: TransactionId(value.transaction_id),
             visibility: value.visibility.into(),
-            review_reason: value.review_reason.map(Into::into),
             base: value.into(),
         }
     }

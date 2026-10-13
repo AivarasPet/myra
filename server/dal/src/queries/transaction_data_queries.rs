@@ -91,7 +91,6 @@ pub fn insert_transactions(models: Vec<AddTransactionModel>) -> DbQueryWithValue
             TransactionIden::TypeId,
             TransactionIden::DateTransacted,
             TransactionIden::Visibility,
-            TransactionIden::ReviewReason,
         ])
         .returning_col(TransactionIden::Id)
         .to_owned();
@@ -102,7 +101,6 @@ pub fn insert_transactions(models: Vec<AddTransactionModel>) -> DbQueryWithValue
             model.transaction_type_id.into(),
             model.date.into(),
             model.visibility.into(),
-            model.review_reason.into(),
         ]);
     }
     builder2.build_sqlx(PostgresQueryBuilder).into()
@@ -188,17 +186,6 @@ pub fn clear_group_id_on_transaction(transaction_id: Uuid) -> DbQueryWithValues 
         .table(TransactionIden::Table)
         .value(TransactionIden::GroupId, Option::<Uuid>::None)
         .and_where(Expr::col(TransactionIden::Id).eq(transaction_id))
-        .build_sqlx(PostgresQueryBuilder)
-        .into()
-}
-
-#[macros::named_query]
-pub fn clear_transaction_review_reason(user_id: Uuid, transaction_id: Uuid) -> DbQueryWithValues {
-    Query::update()
-        .table(TransactionIden::Table)
-        .value(TransactionIden::ReviewReason, Option::<String>::None)
-        .and_where(Expr::col(TransactionIden::Id).eq(transaction_id))
-        .and_where(Expr::col(TransactionIden::UserId).eq(user_id))
         .build_sqlx(PostgresQueryBuilder)
         .into()
 }

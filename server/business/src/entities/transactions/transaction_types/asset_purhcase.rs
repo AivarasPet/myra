@@ -88,7 +88,6 @@ impl TransactionProcessor for AssetPurchaseTransaction {
             dto.transaction_id,
             dto.date,
             dto.visibility,
-            dto.review_reason,
             vec![],
         );
         base.add_fee_entries_from_dtos(dto.fee_entries)?;
@@ -175,7 +174,6 @@ mod tests {
         TransactionDto {
             transaction_id,
             visibility: crate::dtos::transaction_dto::TransactionVisibilityDto::Default,
-            review_reason: None,
             date: datetime!(2024-05-01 00:00:00 UTC),
             fee_entries,
             transaction_type: TransactionTypeDto::AssetPurchase(AssetPurchaseMetadataDto {
@@ -205,7 +203,6 @@ mod tests {
             type_id: DatabaseTransactionTypes::AssetPurchase,
             date_transacted: datetime!(2024-05-01 00:00:00 UTC),
             visibility: "default".to_string(),
-            review_reason: None,
         }
     }
 
@@ -334,7 +331,6 @@ mod tests {
         let dto = TransactionDto {
             transaction_id: None,
             visibility: crate::dtos::transaction_dto::TransactionVisibilityDto::Default,
-            review_reason: None,
             date: datetime!(2024-05-01 00:00:00 UTC),
             fee_entries: vec![],
             transaction_type: TransactionTypeDto::AssetPurchase(AssetPurchaseMetadataDto {

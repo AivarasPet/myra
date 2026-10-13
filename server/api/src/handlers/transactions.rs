@@ -29,7 +29,7 @@ use crate::{
         transactions::{
             base_models::metadata_lookup::MetadataLookupTables,
             delete_transactions::DeleteTransactionsRequestViewModel,
-            get_transactions::{CombinedTransactionItemViewModel, TransactionReviewFilterQuery},
+            get_transactions::CombinedTransactionItemViewModel,
             set_visibility::{
                 SetTransactionVisibilityRequestViewModel, SetTransactionsVisibilityRequestViewModel,
             },
@@ -269,8 +269,7 @@ pub async fn set_transactions_visibility(
     ),
     params(
         ("user_id" = Uuid, Path, description = "User id for which the transaction belongs to."),
-        CursorOrPaginatedSearchQuery,
-        TransactionReviewFilterQuery
+        CursorOrPaginatedSearchQuery
     ),
     security(
         ("auth_token" = [])
@@ -280,7 +279,6 @@ pub async fn set_transactions_visibility(
 pub async fn get_transactions(
     AuthenticatedUserId(user_id): AuthenticatedUserId,
     ValidatedQuery(query_params): ValidatedQuery<CursorOrPaginatedSearchQuery>,
-    ValidatedQuery(review_filter): ValidatedQuery<TransactionReviewFilterQuery>,
     TransactionManagementServiceState(service): TransactionManagementServiceState,
     AssetsServiceState(asset_service): AssetsServiceState,
     AccountsServiceState(accounts_service): AccountsServiceState,
@@ -289,12 +287,7 @@ pub async fn get_transactions(
     let pagination = PaginationModeDto::from(&query_params);
 
     let result = service
-        .get_combined_transactions(
-            user_id,
-            pagination,
-            query_params.query,
-            review_filter.needs_review.unwrap_or(false),
-        )
+        .get_combined_transactions(user_id, pagination, query_params.query)
         .await?;
 
     let all_tx_refs: Vec<_> = result

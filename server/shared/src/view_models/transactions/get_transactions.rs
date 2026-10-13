@@ -9,15 +9,6 @@ use super::{
     transaction_types::RequiredIdentifiableTransactionWithIdentifiableEntries,
 };
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize, utoipa::IntoParams)]
-#[into_params(parameter_in = Query)]
-#[serde(default)]
-pub struct TransactionReviewFilterQuery {
-    /// Only transactions that need the user's review (`review_reason` set), and groups that
-    /// contain one.
-    pub needs_review: Option<bool>,
-}
-
 #[derive(Clone, Debug, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(untagged)]
 pub enum CombinedTransactionItemViewModel {
