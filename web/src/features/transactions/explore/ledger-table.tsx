@@ -22,7 +22,7 @@ import {
   HIT_TARGET,
   InfiniteLoadFooter,
   InlineRowAction,
-  MetaChip,
+  NeedsActionChip,
   rowActivation,
   RowGlyph,
   StatusChip,
@@ -194,10 +194,8 @@ function Description({
         {row.isUnreviewed ? (
           <StatusChip status="unreviewed" size="row" className="flex-none" />
         ) : null}
-        {row.needsReview ? (
-          <MetaChip tone="attention" size="row" className="flex-none">
-            Needs review
-          </MetaChip>
+        {row.needsAction ? (
+          <NeedsActionChip size="row" className="flex-none" />
         ) : null}
       </span>
       {secondary === null || secondary === undefined ? null : (

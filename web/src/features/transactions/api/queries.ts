@@ -44,21 +44,17 @@ export interface LedgerQueryInput {
 export function combinedLedgerInfiniteQueryOptions(input: {
   userId: UserId
   query: string | undefined
-  needsReview?: boolean
   limit?: number
   keepPreviousPage?: boolean
 }) {
   const limit = input.limit ?? LEDGER_PAGE_SIZE
-  const needsReview = input.needsReview === true ? true : undefined
   return cursorInfiniteQueryOptions({
     ...(input.keepPreviousPage === undefined
       ? {}
       : { keepPreviousPage: input.keepPreviousPage }),
-    queryKey: queryKeys.user(input.userId).transactions.combined({
-      limit,
-      query: input.query,
-      ...(needsReview === undefined ? {} : { needsReview }),
-    }),
+    queryKey: queryKeys
+      .user(input.userId)
+      .transactions.combined({ limit, query: input.query }),
     fetchPage: async ({
       cursor,
       signal,
@@ -70,7 +66,6 @@ export function combinedLedgerInfiniteQueryOptions(input: {
         undefined,
         undefined,
         input.query,
-        needsReview,
         { signal }
       )
       return response.data
@@ -232,7 +227,6 @@ export function useLedger(input: LedgerQueryInput): LedgerResult {
     ...combinedLedgerInfiniteQueryOptions({
       userId: input.userId,
       query: plan.query,
-      needsReview: plan.needsReview,
       limit: input.limit,
       keepPreviousPage: input.keepPreviousPage === true,
     }),
@@ -366,7 +360,6 @@ export async function fetchLedgerPage(input: {
       undefined,
       undefined,
       input.query,
-      undefined,
       input.signal === undefined ? {} : { signal: input.signal }
     )
     return response.data

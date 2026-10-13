@@ -10,6 +10,9 @@ pub enum TransactionVisibility {
     Default,
     Ghost,
     Hidden,
+    /// Needs the user's action, e.g. a sync's placeholder opening buy. Counts like `default`;
+    /// any edit of the transaction resets it to `default`.
+    Action,
 }
 
 #[cfg(feature = "backend")]
@@ -19,6 +22,7 @@ impl From<TransactionVisibilityDto> for TransactionVisibility {
             TransactionVisibilityDto::Default => Self::Default,
             TransactionVisibilityDto::Ghost => Self::Ghost,
             TransactionVisibilityDto::Hidden => Self::Hidden,
+            TransactionVisibilityDto::Action => Self::Action,
         }
     }
 }
@@ -30,6 +34,7 @@ impl TransactionVisibility {
             Self::Default => TransactionVisibilityDto::Default,
             Self::Ghost => TransactionVisibilityDto::Ghost,
             Self::Hidden => TransactionVisibilityDto::Hidden,
+            Self::Action => TransactionVisibilityDto::Action,
         }
     }
 }

@@ -7,8 +7,7 @@ use uuid::Uuid;
 
 use crate::dtos::entry_dto::EntryDto;
 use crate::dtos::transaction_dto::{
-    AssetPurchaseMetadataDto, ReviewReasonDto, TransactionDto, TransactionTypeDto,
-    TransactionVisibilityDto,
+    AssetPurchaseMetadataDto, TransactionDto, TransactionTypeDto, TransactionVisibilityDto,
 };
 
 pub(crate) const SYNTHETIC_OPENING_BUY_PREFIX: &str = "synthetic:opening:";
@@ -146,13 +145,13 @@ pub(crate) fn plan_opening_buys(
 impl RequiredOpeningBuy {
     /// An Asset Purchase of the shortfall priced at the sell's price per share
     /// (`|proceeds| / |sold quantity|`), paid in the sell's currency, without fees.
+    /// Marked `action`: its date and price are placeholders for the user to correct.
     /// `None` when the sell has no quantity to price by.
     pub fn to_transaction_dto(
         &self,
         sell_quantity: Decimal,
         sell_proceeds: &EntryDto,
         date: OffsetDateTime,
-        visibility: TransactionVisibilityDto,
     ) -> Option<TransactionDto> {
         if sell_quantity.is_zero() {
             return None;
@@ -163,8 +162,7 @@ impl RequiredOpeningBuy {
         Some(TransactionDto {
             transaction_id: None,
             date,
-            visibility,
-            review_reason: Some(ReviewReasonDto::AutoOpeningBuy),
+            visibility: TransactionVisibilityDto::Action,
             fee_entries: vec![],
             transaction_type: TransactionTypeDto::AssetPurchase(AssetPurchaseMetadataDto {
                 purchase: EntryDto::new(self.asset_id, sell_proceeds.account_id, self.quantity),
@@ -290,20 +288,10 @@ mod tests {
         let account = id(99);
         let date = datetime!(2024-08-22 0:00 UTC);
         let first = required(1, dec!(2))
-            .to_transaction_dto(
-                dec!(-2),
-                &EntryDto::new(1, account, dec!(200)),
-                date,
-                Default::default(),
-            )
+            .to_transaction_dto(dec!(-2), &EntryDto::new(1, account, dec!(200)), date)
             .unwrap();
         let second = required(2, dec!(1.5))
-            .to_transaction_dto(
-                dec!(-3),
-                &EntryDto::new(1, account, dec!(330)),
-                date,
-                Default::default(),
-            )
+            .to_transaction_dto(dec!(-3), &EntryDto::new(1, account, dec!(330)), date)
             .unwrap();
 
         let amounts: Vec<(Decimal, Decimal)> = [first, second]
@@ -324,16 +312,10 @@ mod tests {
         let account = id(99);
         let date = datetime!(2024-08-22 0:00 UTC);
         let dto = required(1, dec!(0.5))
-            .to_transaction_dto(
-                dec!(-1.5),
-                &EntryDto::new(7, account, dec!(150)),
-                date,
-                TransactionVisibilityDto::Ghost,
-            )
+            .to_transaction_dto(dec!(-1.5), &EntryDto::new(7, account, dec!(150)), date)
             .unwrap();
 
-        assert_eq!(dto.review_reason, Some(ReviewReasonDto::AutoOpeningBuy));
-        assert_eq!(dto.visibility, TransactionVisibilityDto::Ghost);
+        assert_eq!(dto.visibility, TransactionVisibilityDto::Action);
         assert_eq!(dto.date, date);
         assert!(dto.fee_entries.is_empty());
         let TransactionTypeDto::AssetPurchase(purchase) = dto.transaction_type else {
@@ -351,7 +333,6 @@ mod tests {
             dec!(0),
             &EntryDto::new(7, id(99), dec!(10)),
             datetime!(2024-08-22 0:00 UTC),
-            Default::default(),
         );
 
         assert!(dto.is_none());
@@ -530,22 +511,17 @@ mod tests {
         let date = datetime!(2024-08-22 0:00 UTC);
         let proceeds = EntryDto::new(7, account, dec!(150));
         let current = required(1, dec!(1.5))
-            .to_transaction_dto(dec!(-1.5), &proceeds, date, Default::default())
+            .to_transaction_dto(dec!(-1.5), &proceeds, date)
             .unwrap();
 
         let same = required(1, dec!(1.5))
-            .to_transaction_dto(dec!(-1.5), &proceeds, date, Default::default())
+            .to_transaction_dto(dec!(-1.5), &proceeds, date)
             .unwrap();
         let smaller = required(1, dec!(0.5))
-            .to_transaction_dto(dec!(-1.5), &proceeds, date, Default::default())
+            .to_transaction_dto(dec!(-1.5), &proceeds, date)
             .unwrap();
         let earlier = required(1, dec!(1.5))
-            .to_transaction_dto(
-                dec!(-1.5),
-                &proceeds,
-                datetime!(2024-08-01 0:00 UTC),
-                Default::default(),
-            )
+            .to_transaction_dto(dec!(-1.5), &proceeds, datetime!(2024-08-01 0:00 UTC))
             .unwrap();
 
         assert!(!opening_buy_changed(&current, &same));

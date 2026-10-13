@@ -47,7 +47,6 @@ const transactionsSearchSchema = z.object({
   type: optionalText,
   from: optionalText,
   to: optionalText,
-  review: z.literal(true).optional().catch(undefined),
   group: z.enum(GROUP_BY_MODES).optional().catch(undefined),
   upload: z.enum(["receipt"]).optional().catch(undefined),
   tx: optionalText,
@@ -63,7 +62,6 @@ const SCOPE_KEYS = [
   "type",
   "from",
   "to",
-  "review",
   "group",
 ] as const satisfies readonly (keyof ExploreSearchPatch)[]
 

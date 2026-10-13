@@ -332,7 +332,6 @@ impl TransactionManagementService {
         user_id: Uuid,
         pagination: PaginationModeDto,
         search_query: Option<String>,
-        needs_review: bool,
     ) -> anyhow::Result<CursorPageOfResultsDto<CombinedTransactionItem>> {
         let limit = pagination.page_size();
 
@@ -341,7 +340,6 @@ impl TransactionManagementService {
             user_id,
             pagination: pagination.into(),
             search_query,
-            needs_review,
         };
         let combined_query =
             transaction_queries::get_combined_transaction_ids_for_user(combined_params);
@@ -612,17 +610,19 @@ impl TransactionManagementService {
             .await?;
 
         self.db
-            .execute(transaction_data_queries::clear_transaction_review_reason(
-                user_id,
-                transaction_id,
-            ))
+            .execute(
+                transaction_data_queries::clear_transaction_action_visibility(
+                    user_id,
+                    transaction_id,
+                ),
+            )
             .await?;
 
         Ok(())
     }
 
     /// Rewrites the date, type and entries of transactions a sync owns. Unlike a user update it
-    /// leaves metadata, the connector link's edit flag and `review_reason` untouched.
+    /// leaves metadata, the connector link's edit flag and visibility untouched.
     pub(crate) async fn update_synced_transactions(
         &self,
         user_id: Uuid,

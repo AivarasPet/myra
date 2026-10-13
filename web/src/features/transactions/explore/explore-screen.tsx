@@ -361,10 +361,6 @@ export function ExploreScreen({
         onModeChange={(next) => {
           onPatch({ group: next })
         }}
-        needsReview={search.review === true}
-        onNeedsReviewChange={(next) => {
-          onPatch({ review: next ? true : undefined })
-        }}
         loadedCount={ledger.loadedCount}
         totalResults={ledger.totalResults}
       />

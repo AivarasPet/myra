@@ -28,7 +28,6 @@ export type LedgerFilterToken =
       readonly key: "visibility"
       readonly value: TransactionVisibility
     }
-  | { readonly key: "needsReview" }
 
 export type LedgerFilterKey = LedgerFilterToken["key"]
 
@@ -87,18 +86,12 @@ export const LEDGER_FILTER_SUPPORT: Record<
     gap: "A2",
     note: "No visibility filter and no count-by-visibility; the review queue cannot be fetched as its own stream.",
   },
-  needsReview: {
-    support: "conditional",
-    gap: null,
-    note: "needs_review on the combined stream keeps transactions with a review_reason and groups holding one. The per-account listing does not take it, so an account token demotes it to unsupported.",
-  },
 }
 
 export interface LedgerQueryPlan {
   readonly source: "combined" | "account"
   readonly accountId: AccountId | null
   readonly query: string | undefined
-  readonly needsReview: boolean
   readonly appliedTokens: readonly LedgerFilterToken[]
   readonly unsupportedTokens: readonly LedgerFilterToken[]
   readonly isFiltered: boolean
@@ -117,7 +110,6 @@ export function planLedgerQuery(
   const applied: LedgerFilterToken[] = []
   const unsupported: LedgerFilterToken[] = []
   let query: string | undefined
-  let needsReview = false
   let accountId: AccountId | null = null
 
   for (const token of tokens) {
@@ -143,16 +135,6 @@ export function planLedgerQuery(
       continue
     }
 
-    if (token.key === "needsReview") {
-      if (canSearch && !needsReview) {
-        needsReview = true
-        applied.push(token)
-      } else {
-        unsupported.push(token)
-      }
-      continue
-    }
-
     if (token.key === "account") {
       if (accountApplied) {
         unsupported.push(token)
@@ -170,7 +152,6 @@ export function planLedgerQuery(
     source: accountId === null ? "combined" : "account",
     accountId,
     query,
-    needsReview,
     appliedTokens: applied,
     unsupportedTokens: unsupported,
     isFiltered: applied.length > 0 || unsupported.length > 0,
@@ -182,6 +163,7 @@ const VISIBILITY_LABELS: Record<TransactionVisibility, string> = {
   default: "reviewed",
   ghost: "unreviewed",
   hidden: "hidden",
+  action: "needs action",
 }
 
 export function tokenLabel(token: LedgerFilterToken): {
@@ -207,7 +189,5 @@ export function tokenLabel(token: LedgerFilterToken): {
       return { key: "max", value: String(token.value) }
     case "visibility":
       return { key: "is", value: VISIBILITY_LABELS[token.value] }
-    case "needsReview":
-      return { key: "is", value: "needs review" }
   }
 }

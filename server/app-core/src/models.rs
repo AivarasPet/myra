@@ -583,6 +583,7 @@ pub enum TransactionVisibility {
     Default,
     Ghost,
     Hidden,
+    Action,
 }
 
 #[derive(Debug, Clone, uniffi::Record)]

@@ -22,7 +22,6 @@ export interface ExploreSearch {
   readonly type?: string
   readonly from?: string
   readonly to?: string
-  readonly review?: true
   readonly group?: GroupByMode
   readonly tx?: string
   readonly expand?: string
@@ -116,8 +115,6 @@ export function buildLedgerTokens(
     tokens.push({ key: "dateTo", value: search.to })
   }
 
-  if (search.review === true) tokens.push({ key: "needsReview" })
-
   return tokens
 }
 
@@ -156,8 +153,6 @@ export function clearToken(token: LedgerFilterToken): ExploreSearchPatch {
       return { from: undefined }
     case "dateTo":
       return { to: undefined }
-    case "needsReview":
-      return { review: undefined }
     default:
       return {}
   }
@@ -172,7 +167,6 @@ export const CLEARED_SEARCH: Required<
   type: undefined,
   from: undefined,
   to: undefined,
-  review: undefined,
 }
 
 export type TokenInputResult =

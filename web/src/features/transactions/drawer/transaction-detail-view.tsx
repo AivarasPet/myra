@@ -2,7 +2,11 @@ import { Figure } from "@/components/figure"
 import { assetLabel, accountLabel, isCurrencyAsset } from "@/lib/domain/refs"
 import { impliedUnitPrice } from "@/lib/domain/transaction-types"
 import { formatDateStamp } from "@/lib/format"
-import { InlineRowAction, StatusChip } from "@/components/primitives"
+import {
+  InlineRowAction,
+  NeedsActionChip,
+  StatusChip,
+} from "@/components/primitives"
 
 import type { LedgerTransactionRow } from "../api"
 import { assetUnitsOf, nativeFigureProps, sumByAsset } from "../api"
@@ -79,6 +83,7 @@ export function DrawerHero({
         {row.isUnreviewed ? (
           <StatusChip status="unreviewed" size="row" />
         ) : null}
+        {row.needsAction ? <NeedsActionChip size="row" /> : null}
         {row.isUnreviewed && onMarkReviewed ? (
           <InlineRowAction
             onClick={onMarkReviewed}

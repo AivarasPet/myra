@@ -779,7 +779,6 @@ impl ConnectorSyncService {
             user_id,
             binding_id,
             binding_row.sverto_account_id,
-            visibility,
             traded_asset_ids,
             &mut report,
         )
@@ -821,7 +820,6 @@ impl ConnectorSyncService {
         user_id: Uuid,
         binding_id: Uuid,
         account_id: Uuid,
-        visibility: TransactionVisibilityDto,
         asset_ids: HashSet<i32>,
         report: &mut SyncReportDto,
     ) -> anyhow::Result<()> {
@@ -990,7 +988,7 @@ impl ConnectorSyncService {
                 return None;
             };
             let date = earliest_imported.map_or(sell.date, |earliest| earliest.min(sell.date));
-            buy.to_transaction_dto(sale.sale.quantity, &sale.proceeds, date, visibility)
+            buy.to_transaction_dto(sale.sale.quantity, &sale.proceeds, date)
         };
 
         let mut new_entities: Vec<Transaction> = Vec::new();
@@ -1036,7 +1034,6 @@ impl ConnectorSyncService {
                 desired_purchase.purchase.entry_id = current_purchase.purchase.entry_id;
                 desired_purchase.sale.entry_id = current_purchase.sale.entry_id;
             }
-            desired.visibility = current.visibility;
             updates.push((existing.transaction_id, desired));
         }
         report.opening_buys_updated = updates.len();
