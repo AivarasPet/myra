@@ -123,9 +123,15 @@ impl Services {
     }
 
     pub fn create_providers(&self) -> ServiceProviders {
+        let db = MyraDb::new(self.connection.clone());
+        #[cfg(not(test))]
+        let job_queue = self.job_queue.bound_to(db.clone());
+        // MockMyraDb has no transaction for jobs to wait for.
+        #[cfg(test)]
+        let job_queue = self.job_queue.clone();
         ServiceProviders {
-            db: MyraDb::new(self.connection.clone()),
-            job_queue: self.job_queue.clone(),
+            job_queue,
+            db,
             file_provider: self.file_provider.clone(),
             redis: self.redis.clone(),
             pg_notify: self.pg_notify.clone(),
