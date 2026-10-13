@@ -1,6 +1,7 @@
 import type {
   GroupTransactionItem,
   RequiredIdentifiableTransaction,
+  ReviewReason,
   TransactionFeeType,
   TransactionVisibility,
 } from "@/api"
@@ -87,6 +88,8 @@ export interface LedgerTransactionRow {
   readonly visibility: TransactionVisibility
   readonly isUnreviewed: boolean
   readonly isHidden: boolean
+  readonly reviewReason: ReviewReason | null
+  readonly needsReview: boolean
   readonly description: LedgerDescription
   readonly category: Category | null
   readonly categorySupported: boolean
@@ -114,6 +117,7 @@ export interface LedgerGroupRow {
   readonly childCount: number
   readonly amountsByAsset: readonly NativeAmount[]
   readonly isUnreviewed: boolean
+  readonly needsReview: boolean
   readonly figureIntent: FigureIntent
   readonly baseCurrencyAmount: BaseCurrencyAmountUnavailable
   readonly raw: GroupTransactionItem

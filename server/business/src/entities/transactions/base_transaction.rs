@@ -9,6 +9,7 @@ use time::OffsetDateTime;
 use uuid::Uuid;
 
 use crate::dtos::fee_entry_dto::FeeEntryDto;
+use crate::dtos::transaction_dto::ReviewReasonDto;
 use crate::dtos::transaction_dto::TransactionDto;
 use crate::dtos::transaction_dto::TransactionTypeDto;
 use crate::entities::entries::entry::Entry;
@@ -19,6 +20,7 @@ pub struct BaseTransaction {
     transaction_id: Option<Uuid>,
     date: OffsetDateTime,
     visibility: crate::dtos::transaction_dto::TransactionVisibilityDto,
+    review_reason: Option<ReviewReasonDto>,
     entries: Vec<Entry>,
     connector_link: Option<ConnectorLinkMeta>,
 }
@@ -29,6 +31,7 @@ impl BaseTransaction {
         transaction_id: Option<Uuid>,
         date: OffsetDateTime,
         visibility: crate::dtos::transaction_dto::TransactionVisibilityDto,
+        review_reason: Option<ReviewReasonDto>,
         entries: Vec<Entry>,
     ) -> Self {
         Self {
@@ -36,6 +39,7 @@ impl BaseTransaction {
             transaction_id,
             date,
             visibility,
+            review_reason,
             entries,
             connector_link: None,
         }
@@ -58,6 +62,10 @@ impl BaseTransaction {
                 &models[0].visibility,
             )
             .unwrap_or_default(),
+            models[0]
+                .review_reason
+                .as_deref()
+                .and_then(ReviewReasonDto::from_db_str),
             models
                 .iter()
                 .map(|x| Entry {
@@ -99,6 +107,7 @@ impl BaseTransaction {
             transaction_id: self.transaction_id,
             date: self.date,
             visibility: self.visibility,
+            review_reason: self.review_reason,
             transaction_type: metadata,
             fee_entries: self.fee_entries_dtos()?,
         })
@@ -114,6 +123,7 @@ impl BaseTransaction {
             date: self.date,
             transaction_type_id: transaction_type as i32,
             visibility: self.visibility.as_str().to_string(),
+            review_reason: self.review_reason.map(|reason| reason.as_str().to_string()),
         }
     }
 
@@ -178,6 +188,7 @@ mod tests {
             None,
             datetime!(2000-03-22 00:00:00 UTC),
             Default::default(),
+            None,
             vec![fee_entry, main_entry],
         );
 
@@ -199,6 +210,7 @@ mod tests {
             None,
             datetime!(2000-03-22 00:00:00 UTC),
             Default::default(),
+            None,
             vec![fee_entry],
         );
 
@@ -221,6 +233,7 @@ mod tests {
             None,
             datetime!(2000-03-22 00:00:00 UTC),
             Default::default(),
+            None,
             entries,
         );
 
@@ -240,6 +253,7 @@ mod tests {
             None,
             datetime!(2000-03-22 00:00:00 UTC),
             Default::default(),
+            None,
             entries,
         );
 
@@ -255,6 +269,7 @@ mod tests {
             None,
             datetime!(2000-03-22 00:00:00 UTC),
             Default::default(),
+            None,
             vec![],
         );
 
@@ -307,6 +322,7 @@ mod tests {
                 type_id: DatabaseTransactionTypes::CashBalanceTransfer,
                 date_transacted: date,
                 visibility: "default".to_string(),
+                review_reason: None,
             },
             TransactionWithEntriesModel {
                 id: 8,
@@ -319,6 +335,7 @@ mod tests {
                 type_id: DatabaseTransactionTypes::CashBalanceTransfer,
                 date_transacted: date,
                 visibility: "default".to_string(),
+                review_reason: None,
             },
         ];
 
@@ -355,6 +372,7 @@ mod tests {
             Some(transaction_id),
             date,
             Default::default(),
+            None,
             entries,
         );
         let metadata = TransactionTypeDto::CashTransferIn(CashTransferInMetadataDto {

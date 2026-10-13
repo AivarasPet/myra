@@ -18,6 +18,8 @@ export const UNSUPPORTED_COPY: Record<LedgerFilterKey, string> = {
   amountMin: "Sverto cannot filter by amount yet.",
   amountMax: "Sverto cannot filter by amount yet.",
   visibility: "Sverto cannot filter by review status yet.",
+  needsReview:
+    "A single account's listing cannot narrow to transactions that need review. Remove the account to see them.",
 }
 
 export const QUERY_PLACEHOLDER =

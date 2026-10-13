@@ -1,5 +1,7 @@
-use sqlx::types::{Json, Uuid};
+use sqlx::types::{Decimal, Json, Uuid};
 use time::OffsetDateTime;
+
+use crate::enums::transaction_types::DatabaseTransactionTypes;
 
 #[derive(sqlx::FromRow, Debug)]
 pub struct ConnectorConnectionRow {
@@ -40,6 +42,19 @@ pub struct ConnectorTransactionRow {
     pub external_id: String,
     pub external_hash: String,
     pub edited_by_user: bool,
+}
+
+/// One instrument entry of an account, with the binding's connector link (if any) of its
+/// transaction.
+#[derive(sqlx::FromRow, Debug)]
+pub struct PositionTimelineEntryRow {
+    pub asset_id: i32,
+    pub transaction_id: Uuid,
+    pub type_id: DatabaseTransactionTypes,
+    pub date_transacted: OffsetDateTime,
+    pub quantity: Decimal,
+    pub external_id: Option<String>,
+    pub edited_by_user: Option<bool>,
 }
 
 #[derive(sqlx::FromRow, Debug)]

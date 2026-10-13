@@ -32,11 +32,32 @@ impl TransactionVisibilityDto {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ReviewReasonDto {
+    AutoOpeningBuy,
+}
+
+impl ReviewReasonDto {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::AutoOpeningBuy => "auto_opening_buy",
+        }
+    }
+
+    pub fn from_db_str(s: &str) -> Option<Self> {
+        match s {
+            "auto_opening_buy" => Some(Self::AutoOpeningBuy),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct TransactionDto {
     pub transaction_id: Option<Uuid>,
     pub date: OffsetDateTime,
     pub visibility: TransactionVisibilityDto,
+    pub review_reason: Option<ReviewReasonDto>,
     pub fee_entries: Vec<FeeEntryDto>,
     pub transaction_type: TransactionTypeDto,
 }

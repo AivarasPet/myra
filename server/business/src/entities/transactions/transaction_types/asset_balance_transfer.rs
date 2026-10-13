@@ -88,6 +88,7 @@ impl TransactionProcessor for AssetBalanceTransferTransaction {
             dto.transaction_id,
             dto.date,
             dto.visibility,
+            dto.review_reason,
             vec![],
         );
         base.add_fee_entries_from_dtos(dto.fee_entries)?;
@@ -168,6 +169,7 @@ mod tests {
         TransactionDto {
             transaction_id: None,
             visibility: crate::dtos::transaction_dto::TransactionVisibilityDto::Default,
+            review_reason: None,
             date: datetime!(2000-03-23 00:00:00 UTC),
             fee_entries,
             transaction_type: TransactionTypeDto::AssetBalanceTransfer(

@@ -38,6 +38,7 @@ pub fn get_transaction_with_entries(params: GetTransactionWithEntriesParams) -> 
         .column(TransactionIden::TypeId)
         .column(TransactionIden::DateTransacted)
         .column(TransactionIden::Visibility)
+        .column(TransactionIden::ReviewReason)
         .conditions(
             params.paging.is_some(),
             |q| {
@@ -189,6 +190,7 @@ pub fn get_transaction_with_entries(params: GetTransactionWithEntriesParams) -> 
         .column((TransactionIden::Table, TransactionIden::TypeId))
         .column((TransactionIden::Table, TransactionIden::DateTransacted))
         .column((TransactionIden::Table, TransactionIden::Visibility))
+        .column((TransactionIden::Table, TransactionIden::ReviewReason))
         .conditions(
             is_paged,
             |q| {
@@ -264,7 +266,7 @@ pub fn get_combined_transaction_ids_for_user(
         .to_owned();
 
     // --- CTE: group transactions half (DISTINCT ON tg.id) ---
-    let group_query = Query::select()
+    let mut group_query = Query::select()
         .distinct_on([(
             TransactionGroupIden::Table,
             TransactionGroupIden::TransactionGroupId,
@@ -314,6 +316,13 @@ pub fn get_combined_transaction_ids_for_user(
         )
         .and_where(Expr::col((TransactionIden::Table, TransactionIden::UserId)).eq(params.user_id))
         .to_owned();
+
+    if params.needs_review {
+        let needs_review =
+            Expr::col((TransactionIden::Table, TransactionIden::ReviewReason)).is_not_null();
+        individual_query.and_where(needs_review.clone());
+        group_query.and_where(needs_review);
+    }
 
     // --- CTE: UNION ALL ---
     let combined_cte_query = individual_query

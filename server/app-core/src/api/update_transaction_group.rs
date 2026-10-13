@@ -82,6 +82,7 @@ fn build_child(
     let base = IdentifiableTransactionBaseWithIdentifiableEntries {
         transaction_id: TransactionId(transaction_id),
         visibility: Default::default(),
+        review_reason: None,
         base: base_inner,
     };
 

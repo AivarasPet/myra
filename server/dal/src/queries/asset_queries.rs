@@ -11,6 +11,7 @@ use time::Duration;
 
 use crate::{
     idens::{
+        account_idens::AccountIden,
         asset_idens::{
             AssetHistoryCalculationIden, AssetHistoryIden, AssetPairSharedMetadataIden,
             AssetPairUserMetadataIden, AssetPairsIden, AssetTypesIden, AssetsAliasIden, AssetsIden,
@@ -105,6 +106,99 @@ pub fn get_asset_ids_by_tickers(user_id: Uuid, tickers: Vec<String>) -> DbQueryW
         .column((AssetsIden::Table, AssetsIden::Ticker))
         .from(AssetsIden::Table)
         .and_where(Expr::col((AssetsIden::Table, AssetsIden::Ticker)).is_in(tickers))
+        .and_where(
+            Expr::col((AssetsIden::Table, AssetsIden::UserId))
+                .is_null()
+                .or(Expr::col((AssetsIden::Table, AssetsIden::UserId)).eq(user_id)),
+        )
+        .build_sqlx(PostgresQueryBuilder)
+        .into()
+}
+
+#[macros::named_query]
+pub fn get_asset_ids_by_isins(
+    user_id: Uuid,
+    account_id: Uuid,
+    isins: Vec<String>,
+) -> DbQueryWithValues {
+    Query::select()
+        .column((AssetsIden::Table, AssetsIden::Id))
+        .column((AssetsIden::Table, AssetsIden::Isin))
+        .expr_as(
+            Expr::exists(
+                Query::select()
+                    .expr(Expr::val(1))
+                    .from(EntryIden::Table)
+                    .and_where(
+                        Expr::col((EntryIden::Table, EntryIden::AssetId))
+                            .equals((AssetsIden::Table, AssetsIden::Id)),
+                    )
+                    .and_where(Expr::col((EntryIden::Table, EntryIden::AccountId)).eq(account_id))
+                    .take(),
+            ),
+            Alias::new("held_in_account"),
+        )
+        .from(AssetsIden::Table)
+        .and_where(Expr::col((AssetsIden::Table, AssetsIden::Isin)).is_in(isins))
+        .and_where(
+            Expr::col((AssetsIden::Table, AssetsIden::UserId))
+                .is_null()
+                .or(Expr::col((AssetsIden::Table, AssetsIden::UserId)).eq(user_id)),
+        )
+        .build_sqlx(PostgresQueryBuilder)
+        .into()
+}
+
+/// Candidates whose ticker root (the part before the first `.`, case-insensitive) matches
+/// one of `root_symbols`, with the facts needed to pick one: holdings and base currency.
+#[macros::named_query]
+pub fn get_asset_candidates_by_root_symbols(
+    user_id: Uuid,
+    account_id: Uuid,
+    root_symbols: Vec<String>,
+) -> DbQueryWithValues {
+    let root_symbol = || Expr::cust("LOWER(SPLIT_PART(\"assets\".\"ticker\", '.', 1))");
+    let root_symbols: Vec<String> = root_symbols.iter().map(|s| s.to_lowercase()).collect();
+    let entries_of_asset = || {
+        Query::select()
+            .expr(Expr::val(1))
+            .from(EntryIden::Table)
+            .and_where(
+                Expr::col((EntryIden::Table, EntryIden::AssetId))
+                    .equals((AssetsIden::Table, AssetsIden::Id)),
+            )
+            .to_owned()
+    };
+    let held_in_account = entries_of_asset()
+        .and_where(Expr::col((EntryIden::Table, EntryIden::AccountId)).eq(account_id))
+        .to_owned();
+    let held_by_user = entries_of_asset()
+        .inner_join(
+            AccountIden::Table,
+            Expr::col((AccountIden::Table, AccountIden::Id))
+                .equals((EntryIden::Table, EntryIden::AccountId)),
+        )
+        .and_where(Expr::col((AccountIden::Table, AccountIden::UserId)).eq(user_id))
+        .to_owned();
+
+    Query::select()
+        .column((AssetsIden::Table, AssetsIden::Id))
+        .expr_as(root_symbol(), Alias::new("root_symbol"))
+        .expr_as(
+            Expr::col((AssetsAliasIden::BaseAssetJoin, AssetsIden::Ticker)),
+            Alias::new("base_currency"),
+        )
+        .expr_as(Expr::exists(held_in_account), Alias::new("held_in_account"))
+        .expr_as(Expr::exists(held_by_user), Alias::new("held_by_user"))
+        .from(AssetsIden::Table)
+        .join_as(
+            sea_query::JoinType::LeftJoin,
+            AssetsIden::Table,
+            AssetsAliasIden::BaseAssetJoin,
+            Expr::col((AssetsAliasIden::BaseAssetJoin, AssetsIden::Id))
+                .equals((AssetsIden::Table, AssetsIden::BasePairId)),
+        )
+        .and_where(root_symbol().is_in(root_symbols))
         .and_where(
             Expr::col((AssetsIden::Table, AssetsIden::UserId))
                 .is_null()

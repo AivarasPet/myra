@@ -1,4 +1,6 @@
 use connectors::models::transaction::ProviderTransaction;
+use rust_decimal::Decimal;
+use time::OffsetDateTime;
 use uuid::Uuid;
 
 use crate::dtos::entry_dto::EntryDto;
@@ -12,6 +14,9 @@ use crate::entities::transactions::transaction_types::create_transaction_from_dt
 
 const IMPORT_CATEGORY_ID: i32 = 76;
 
+// TODO: move the Trading212-specific ticker handling (these aliases and the `_EQ` / `_US` / LSE `l`
+// suffix parsing in `instrument_ticker_candidates`) into the Trading212 mapper, so it emits
+// `SYMBOL.EXCHANGE` like other connectors and this shared code keeps only provider-neutral fallbacks.
 const TICKER_ALIASES: &[(&str, &str)] = &[("FB_US_EQ", "META.NASDAQ"), ("JAYl_EQ", "S5WA.F")];
 
 pub(crate) enum TransactionImportOutcome {
@@ -54,6 +59,32 @@ impl ProviderTransactionImport {
         &self.transaction.currency
     }
 
+    pub fn instrument_isin(&self) -> Option<&str> {
+        self.transaction
+            .asset_identifier
+            .as_ref()
+            .and(self.transaction.isin.as_deref())
+    }
+
+    pub fn instrument_underlying_symbol(&self) -> Option<&str> {
+        self.transaction
+            .asset_identifier
+            .as_ref()
+            .and(self.transaction.underlying_symbol.as_deref())
+    }
+
+    pub fn is_trade(&self) -> bool {
+        self.transaction.quantity.is_some() && self.transaction.asset_identifier.is_some()
+    }
+
+    pub fn amount(&self) -> Decimal {
+        self.transaction.amount
+    }
+
+    pub fn date(&self) -> OffsetDateTime {
+        self.transaction.date
+    }
+
     pub fn instrument_ticker_candidates(&self) -> Vec<String> {
         let Some(provider_ticker) = self.transaction.asset_identifier.as_deref() else {
             return vec![];
@@ -81,6 +112,14 @@ impl ProviderTransactionImport {
             {
                 return vec![format!("{base}.LSE")];
             }
+        }
+        // Asset data sometimes lists a US stock under the other US exchange than the one
+        // the provider reports (e.g. ETSY as `.NYSE`), so try both.
+        if let Some(base) = stripped.strip_suffix(".NASDAQ") {
+            return vec![stripped.to_string(), format!("{base}.NYSE")];
+        }
+        if let Some(base) = stripped.strip_suffix(".NYSE") {
+            return vec![stripped.to_string(), format!("{base}.NASDAQ")];
         }
         vec![stripped.to_string()]
     }
@@ -156,6 +195,7 @@ impl ProviderTransactionImport {
             transaction_id: None,
             date: tx.date,
             visibility: self.visibility,
+            review_reason: None,
             fee_entries: vec![],
             transaction_type,
         })

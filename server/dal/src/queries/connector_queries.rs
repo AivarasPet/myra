@@ -1,13 +1,22 @@
-use sea_query::{Alias, Expr, ExprTrait, OnConflict, PostgresQueryBuilder, Query, SelectStatement};
+use sea_query::{
+    Alias, Expr, ExprTrait, Func, JoinType, OnConflict, PostgresQueryBuilder, Query,
+    SelectStatement,
+};
 use sea_query_sqlx::SqlxBinder;
 use sqlx::types::Uuid;
 
 use super::DbQueryWithValues;
 use crate::{
-    idens::connector_idens::{
-        ConnectorBindingIden, ConnectorConnectionIden, ConnectorProviderAccountIden,
-        ConnectorProviderIden, ConnectorRawPageIden, ConnectorTransactionIden,
+    idens::{
+        asset_idens::AssetsIden,
+        connector_idens::{
+            ConnectorBindingIden, ConnectorConnectionIden, ConnectorProviderAccountIden,
+            ConnectorProviderIden, ConnectorRawPageIden, ConnectorTransactionIden,
+        },
+        entries_idens::EntryIden,
+        transaction_idens::TransactionIden,
     },
+    models::asset_models::asset_type_ids,
     models::connector_models::{
         AddConnectorBindingModel, AddConnectorConnectionModel, AddConnectorProviderAccountModel,
         AddConnectorRawPageModel, AddConnectorTransactionModel,
@@ -604,6 +613,125 @@ pub fn mark_connector_transactions_edited(transaction_ids: Vec<Uuid>) -> DbQuery
                 ConnectorTransactionIden::TransactionId,
             ))
             .is_in(transaction_ids),
+        )
+        .build_sqlx(PostgresQueryBuilder)
+        .into()
+}
+
+#[macros::named_query]
+pub fn delete_connector_transactions_by_external_ids(
+    binding_id: Uuid,
+    external_ids: Vec<String>,
+) -> DbQueryWithValues {
+    Query::delete()
+        .from_table(ConnectorTransactionIden::Table)
+        .and_where(Expr::col(ConnectorTransactionIden::BindingId).eq(binding_id))
+        .and_where(Expr::col(ConnectorTransactionIden::ExternalId).is_in(external_ids))
+        .build_sqlx(PostgresQueryBuilder)
+        .into()
+}
+
+/// Earliest `date_transacted` among the binding's linked transactions, ignoring links whose
+/// external id starts with `excluded_external_id_prefix`. NULL when the binding has none.
+#[macros::named_query]
+pub fn get_binding_earliest_transaction_date(
+    binding_id: Uuid,
+    excluded_external_id_prefix: &str,
+) -> DbQueryWithValues {
+    let excluded_pattern = format!(
+        "{}%",
+        excluded_external_id_prefix
+            .replace('\\', "\\\\")
+            .replace('%', "\\%")
+            .replace('_', "\\_")
+    );
+    Query::select()
+        .expr(Func::min(Expr::col((
+            TransactionIden::Table,
+            TransactionIden::DateTransacted,
+        ))))
+        .from(ConnectorTransactionIden::Table)
+        .join(
+            JoinType::InnerJoin,
+            TransactionIden::Table,
+            Expr::col((TransactionIden::Table, TransactionIden::Id)).equals((
+                ConnectorTransactionIden::Table,
+                ConnectorTransactionIden::TransactionId,
+            )),
+        )
+        .and_where(
+            Expr::col((
+                ConnectorTransactionIden::Table,
+                ConnectorTransactionIden::BindingId,
+            ))
+            .eq(binding_id),
+        )
+        .and_where(
+            Expr::col((
+                ConnectorTransactionIden::Table,
+                ConnectorTransactionIden::ExternalId,
+            ))
+            .not_like(excluded_pattern),
+        )
+        .build_sqlx(PostgresQueryBuilder)
+        .into()
+}
+
+/// Every entry of the given non-currency assets in the account, with the transaction's date and
+/// type and — when the transaction is linked to `binding_id` — its external id and edit flag.
+#[macros::named_query]
+pub fn get_position_timeline_entries(
+    binding_id: Uuid,
+    account_id: Uuid,
+    asset_ids: Vec<i32>,
+) -> DbQueryWithValues {
+    Query::select()
+        .column((EntryIden::Table, EntryIden::AssetId))
+        .column((EntryIden::Table, EntryIden::TransactionId))
+        .column((TransactionIden::Table, TransactionIden::TypeId))
+        .column((TransactionIden::Table, TransactionIden::DateTransacted))
+        .column((EntryIden::Table, EntryIden::Quantity))
+        .column((
+            ConnectorTransactionIden::Table,
+            ConnectorTransactionIden::ExternalId,
+        ))
+        .column((
+            ConnectorTransactionIden::Table,
+            ConnectorTransactionIden::EditedByUser,
+        ))
+        .from(EntryIden::Table)
+        .join(
+            JoinType::InnerJoin,
+            TransactionIden::Table,
+            Expr::col((TransactionIden::Table, TransactionIden::Id))
+                .equals((EntryIden::Table, EntryIden::TransactionId)),
+        )
+        .join(
+            JoinType::InnerJoin,
+            AssetsIden::Table,
+            Expr::col((AssetsIden::Table, AssetsIden::Id))
+                .equals((EntryIden::Table, EntryIden::AssetId)),
+        )
+        .join(
+            JoinType::LeftJoin,
+            ConnectorTransactionIden::Table,
+            Expr::col((
+                ConnectorTransactionIden::Table,
+                ConnectorTransactionIden::TransactionId,
+            ))
+            .equals((EntryIden::Table, EntryIden::TransactionId))
+            .and(
+                Expr::col((
+                    ConnectorTransactionIden::Table,
+                    ConnectorTransactionIden::BindingId,
+                ))
+                .eq(binding_id),
+            ),
+        )
+        .and_where(Expr::col((EntryIden::Table, EntryIden::AccountId)).eq(account_id))
+        .and_where(Expr::col((EntryIden::Table, EntryIden::AssetId)).is_in(asset_ids))
+        .and_where(
+            Expr::col((AssetsIden::Table, AssetsIden::AssetType)).ne(asset_type_ids::CURRENCY),
         )
         .build_sqlx(PostgresQueryBuilder)
         .into()

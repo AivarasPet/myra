@@ -3,8 +3,9 @@ use std::collections::{HashMap, HashSet};
 use dal::{
     models::{
         asset_models::{
-            Asset, AssetBasePair, AssetId, AssetPair, AssetPairId, AssetPairSharedMetadata,
-            AssetPairUserMetadata, AssetRaw, AssetTickerId, AssetWithMetadata, PublicAsset,
+            Asset, AssetBasePair, AssetId, AssetIsinId, AssetPair, AssetPairId,
+            AssetPairSharedMetadata, AssetPairUserMetadata, AssetRaw, AssetRootSymbolCandidate,
+            AssetTickerId, AssetWithMetadata, PublicAsset,
         },
         base::{Count, Exsists, TotalCount},
     },
@@ -142,6 +143,81 @@ impl AssetsService {
         let query = asset_queries::get_asset_ids_by_tickers(user_id, tickers.into_iter().collect());
         let rows = self.db.fetch_all::<AssetTickerId>(query).await?;
         Ok(rows.into_iter().map(|row| (row.ticker, row.id)).collect())
+    }
+
+    /// An ISIN identifies a security, not a listing, so several assets can share one.
+    /// Ambiguous ISINs resolve only when exactly one candidate is already held in the account.
+    #[tracing::instrument(level = "debug", skip_all, fields(user_id = %user_id))]
+    pub async fn resolve_isins(
+        &self,
+        user_id: Uuid,
+        account_id: Uuid,
+        isins: HashSet<String>,
+    ) -> anyhow::Result<HashMap<String, i32>> {
+        if isins.is_empty() {
+            return Ok(HashMap::new());
+        }
+        let query =
+            asset_queries::get_asset_ids_by_isins(user_id, account_id, isins.into_iter().collect());
+        let rows = self.db.fetch_all::<AssetIsinId>(query).await?;
+
+        let mut candidates: HashMap<String, Vec<AssetIsinId>> = HashMap::new();
+        for row in rows {
+            candidates.entry(row.isin.clone()).or_default().push(row);
+        }
+        Ok(candidates
+            .into_iter()
+            .filter_map(|(isin, rows)| {
+                let id = match rows.as_slice() {
+                    [only] => only.id,
+                    _ => {
+                        let mut held = rows.iter().filter(|row| row.held_in_account);
+                        match (held.next(), held.next()) {
+                            (Some(row), None) => row.id,
+                            _ => return None,
+                        }
+                    }
+                };
+                Some((isin, id))
+            })
+            .collect())
+    }
+
+    /// Resolves `(root symbol, currency)` keys for rows the provider booked against a
+    /// pseudo-instrument. Never creates assets; see `select_root_symbol_candidate`.
+    #[tracing::instrument(level = "debug", skip_all, fields(user_id = %user_id))]
+    pub async fn resolve_root_symbols(
+        &self,
+        user_id: Uuid,
+        account_id: Uuid,
+        keys: HashSet<(String, String)>,
+    ) -> anyhow::Result<HashMap<(String, String), i32>> {
+        if keys.is_empty() {
+            return Ok(HashMap::new());
+        }
+        let root_symbols: HashSet<String> = keys.iter().map(|(root, _)| root.clone()).collect();
+        let query = asset_queries::get_asset_candidates_by_root_symbols(
+            user_id,
+            account_id,
+            root_symbols.into_iter().collect(),
+        );
+        let rows = self.db.fetch_all::<AssetRootSymbolCandidate>(query).await?;
+
+        let mut candidates: HashMap<String, Vec<AssetRootSymbolCandidate>> = HashMap::new();
+        for row in rows {
+            candidates
+                .entry(row.root_symbol.clone())
+                .or_default()
+                .push(row);
+        }
+        Ok(keys
+            .into_iter()
+            .filter_map(|(root, currency)| {
+                let rows = candidates.get(&root.to_lowercase())?;
+                let id = select_root_symbol_candidate(rows, &currency)?;
+                Some(((root, currency), id))
+            })
+            .collect())
     }
 
     #[tracing::instrument(level = "debug", skip_all, fields(pair1, pair2))]
@@ -488,5 +564,123 @@ impl AssetsService {
             })
             .collect();
         Ok(ret)
+    }
+}
+
+/// Holdings win: a single candidate held in the account, else a single one held anywhere by
+/// the user. When the user holds several, only one quoted in `currency` qualifies; lower tiers
+/// are not consulted. Without holdings, the single candidate quoted in `currency` wins.
+fn select_root_symbol_candidate(
+    candidates: &[AssetRootSymbolCandidate],
+    currency: &str,
+) -> Option<i32> {
+    fn single<'a>(mut matches: impl Iterator<Item = &'a AssetRootSymbolCandidate>) -> Option<i32> {
+        match (matches.next(), matches.next()) {
+            (Some(only), None) => Some(only.id),
+            _ => None,
+        }
+    }
+
+    let quoted_in_currency = |candidate: &&AssetRootSymbolCandidate| {
+        candidate
+            .base_currency
+            .as_deref()
+            .is_some_and(|base| base.eq_ignore_ascii_case(currency))
+    };
+
+    for held in [
+        candidates
+            .iter()
+            .filter(|c| c.held_in_account)
+            .collect::<Vec<_>>(),
+        candidates
+            .iter()
+            .filter(|c| c.held_by_user)
+            .collect::<Vec<_>>(),
+    ] {
+        match held.as_slice() {
+            [] => continue,
+            [only] => return Some(only.id),
+            _ => return single(held.into_iter().filter(quoted_in_currency)),
+        }
+    }
+    single(candidates.iter().filter(quoted_in_currency))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn candidate(
+        id: i32,
+        base_currency: &str,
+        held_in_account: bool,
+        held_by_user: bool,
+    ) -> AssetRootSymbolCandidate {
+        AssetRootSymbolCandidate {
+            id,
+            root_symbol: "shell".to_string(),
+            base_currency: Some(base_currency.to_string()),
+            held_in_account,
+            held_by_user,
+        }
+    }
+
+    #[test]
+    fn prefers_asset_held_in_account() {
+        let candidates = [
+            candidate(1, "EUR", false, true),
+            candidate(2, "GBP", true, true),
+            candidate(3, "EUR", false, false),
+        ];
+        assert_eq!(select_root_symbol_candidate(&candidates, "EUR"), Some(2));
+    }
+
+    #[test]
+    fn falls_back_to_asset_held_in_other_account() {
+        let candidates = [
+            candidate(1, "CZK", false, true),
+            candidate(2, "EUR", false, false),
+        ];
+        assert_eq!(select_root_symbol_candidate(&candidates, "EUR"), Some(1));
+    }
+
+    #[test]
+    fn narrows_several_holdings_by_currency() {
+        let candidates = [
+            candidate(1, "CZK", true, true),
+            candidate(2, "EUR", true, true),
+        ];
+        assert_eq!(select_root_symbol_candidate(&candidates, "eur"), Some(2));
+    }
+
+    #[test]
+    fn ambiguous_holdings_do_not_fall_through_to_unheld_assets() {
+        let candidates = [
+            candidate(1, "CZK", true, true),
+            candidate(2, "GBP", true, true),
+            candidate(3, "EUR", false, false),
+        ];
+        assert_eq!(select_root_symbol_candidate(&candidates, "EUR"), None);
+    }
+
+    #[test]
+    fn picks_unheld_asset_quoted_in_transaction_currency() {
+        let candidates = [
+            candidate(1, "CZK", false, false),
+            candidate(2, "EUR", false, false),
+        ];
+        assert_eq!(select_root_symbol_candidate(&candidates, "EUR"), Some(2));
+    }
+
+    #[test]
+    fn leaves_ambiguous_or_unmatched_currency_unresolved() {
+        let candidates = [
+            candidate(1, "EUR", false, false),
+            candidate(2, "EUR", false, false),
+            candidate(3, "CZK", false, false),
+        ];
+        assert_eq!(select_root_symbol_candidate(&candidates, "EUR"), None);
+        assert_eq!(select_root_symbol_candidate(&candidates, "USD"), None);
     }
 }

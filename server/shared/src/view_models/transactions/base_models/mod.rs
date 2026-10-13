@@ -3,6 +3,7 @@ pub mod category_id;
 pub mod description;
 pub mod entry_id;
 pub mod metadata_lookup;
+pub mod review_reason;
 pub mod transaction_base;
 pub mod transaction_fee;
 pub mod transaction_group;

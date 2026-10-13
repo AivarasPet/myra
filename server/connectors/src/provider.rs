@@ -4,6 +4,7 @@ use async_trait::async_trait;
 use serde_json::Value;
 
 use crate::enablebanking::provider::EnableBankingProvider;
+use crate::ibkr::provider::IbkrProvider;
 use crate::models::{account::ProviderAccount, aspsp::Aspsp, transaction::MappedTransaction};
 use crate::port::{Connector, ConnectorStore};
 use crate::trading212::provider::Trading212Provider;
@@ -15,6 +16,7 @@ pub enum ProviderKind {
     Trading212,
     TrueLayer,
     EnableBanking,
+    Ibkr,
 }
 
 impl ProviderKind {
@@ -23,6 +25,7 @@ impl ProviderKind {
             ProviderKind::Trading212 => "trading212",
             ProviderKind::TrueLayer => "truelayer",
             ProviderKind::EnableBanking => "enablebanking",
+            ProviderKind::Ibkr => "ibkr",
         }
     }
 
@@ -47,6 +50,10 @@ impl ProviderKind {
                 "transactions" => Some(crate::enablebanking::mapper::map_transaction(item)),
                 _ => None,
             },
+            ProviderKind::Ibkr => match stream {
+                "statement" => crate::ibkr::mapper::map_row(item),
+                _ => None,
+            },
         }
     }
 }
@@ -59,6 +66,7 @@ impl FromStr for ProviderKind {
             "trading212" => Ok(ProviderKind::Trading212),
             "truelayer" => Ok(ProviderKind::TrueLayer),
             "enablebanking" => Ok(ProviderKind::EnableBanking),
+            "ibkr" => Ok(ProviderKind::Ibkr),
             other => anyhow::bail!("unknown provider kind: {other}"),
         }
     }
@@ -152,10 +160,12 @@ impl ProviderKind {
         static TRADING212: Trading212Provider = Trading212Provider;
         static TRUELAYER: TrueLayerProvider = TrueLayerProvider;
         static ENABLEBANKING: EnableBankingProvider = EnableBankingProvider;
+        static IBKR: IbkrProvider = IbkrProvider;
         match self {
             ProviderKind::Trading212 => &TRADING212,
             ProviderKind::TrueLayer => &TRUELAYER,
             ProviderKind::EnableBanking => &ENABLEBANKING,
+            ProviderKind::Ibkr => &IBKR,
         }
     }
 }

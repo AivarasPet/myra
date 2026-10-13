@@ -74,6 +74,7 @@ export function toTransactionRow(
   const primaryLeg = legs.find((leg) => leg.role === "primary") ?? null
   const categoryId = transactionCategoryId(transaction)
   const visibility = transaction.visibility ?? "default"
+  const reviewReason = transaction.review_reason ?? null
 
   return {
     kind: "transaction",
@@ -86,6 +87,8 @@ export function toTransactionRow(
     visibility,
     isUnreviewed: visibility === "ghost",
     isHidden: visibility === "hidden",
+    reviewReason,
+    needsReview: reviewReason !== null,
     description: describeTransaction(transaction, lookup),
     category:
       categoryId === null ? null : (lookup.categories.get(categoryId) ?? null),
@@ -138,6 +141,7 @@ export function toGroupRow(
       children.flatMap((child) => child.legs.map((leg) => leg.amount))
     ),
     isUnreviewed: children.some((child) => child.isUnreviewed),
+    needsReview: children.some((child) => child.needsReview),
     figureIntent: groupFigureIntent(children),
     baseCurrencyAmount: BASE_CURRENCY_AMOUNT_UNAVAILABLE,
     raw: group,

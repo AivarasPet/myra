@@ -327,6 +327,7 @@ impl From<IdentifiableTransactionWithIdentifiableEntries> for TransactionDto {
                     transaction_id,
                     date,
                     visibility: business::dtos::transaction_dto::TransactionVisibilityDto::Default,
+                    review_reason: None,
                     fee_entries,
                     transaction_type: TransactionTypeDto::Regular(RegularTransactionMetadataDto {
                         description: t.description.map(|d| d.into_inner()),
@@ -341,6 +342,7 @@ impl From<IdentifiableTransactionWithIdentifiableEntries> for TransactionDto {
                     transaction_id,
                     date,
                     visibility: business::dtos::transaction_dto::TransactionVisibilityDto::Default,
+                    review_reason: None,
                     fee_entries,
                     transaction_type: TransactionTypeDto::CashTransferOut(
                         CashTransferOutMetadataDto {
@@ -355,6 +357,7 @@ impl From<IdentifiableTransactionWithIdentifiableEntries> for TransactionDto {
                     transaction_id,
                     date,
                     visibility: business::dtos::transaction_dto::TransactionVisibilityDto::Default,
+                    review_reason: None,
                     fee_entries,
                     transaction_type: TransactionTypeDto::CashTransferIn(
                         CashTransferInMetadataDto {
@@ -369,6 +372,7 @@ impl From<IdentifiableTransactionWithIdentifiableEntries> for TransactionDto {
                     transaction_id,
                     date,
                     visibility: business::dtos::transaction_dto::TransactionVisibilityDto::Default,
+                    review_reason: None,
                     fee_entries,
                     transaction_type: TransactionTypeDto::CashDividend(CashDividendMetadataDto {
                         entry: t.entry.into(),
@@ -382,6 +386,7 @@ impl From<IdentifiableTransactionWithIdentifiableEntries> for TransactionDto {
                     transaction_id,
                     date,
                     visibility: business::dtos::transaction_dto::TransactionVisibilityDto::Default,
+                    review_reason: None,
                     fee_entries,
                     transaction_type: TransactionTypeDto::AssetPurchase(AssetPurchaseMetadataDto {
                         purchase: t.purchase_change.into(),
@@ -395,6 +400,7 @@ impl From<IdentifiableTransactionWithIdentifiableEntries> for TransactionDto {
                     transaction_id,
                     date,
                     visibility: business::dtos::transaction_dto::TransactionVisibilityDto::Default,
+                    review_reason: None,
                     fee_entries,
                     transaction_type: TransactionTypeDto::AssetSale(AssetSaleMetadataDto {
                         sale: t.sale_entry.into(),
@@ -408,6 +414,7 @@ impl From<IdentifiableTransactionWithIdentifiableEntries> for TransactionDto {
                     transaction_id,
                     date,
                     visibility: business::dtos::transaction_dto::TransactionVisibilityDto::Default,
+                    review_reason: None,
                     fee_entries,
                     transaction_type: TransactionTypeDto::AssetTrade(AssetTradeMetadataDto {
                         outgoing_entry: t.outgoing_entry.into(),
@@ -421,6 +428,7 @@ impl From<IdentifiableTransactionWithIdentifiableEntries> for TransactionDto {
                     transaction_id,
                     date,
                     visibility: business::dtos::transaction_dto::TransactionVisibilityDto::Default,
+                    review_reason: None,
                     fee_entries,
                     transaction_type: TransactionTypeDto::AssetTransferIn(
                         AssetTransferInMetadataDto {
@@ -435,6 +443,7 @@ impl From<IdentifiableTransactionWithIdentifiableEntries> for TransactionDto {
                     transaction_id,
                     date,
                     visibility: business::dtos::transaction_dto::TransactionVisibilityDto::Default,
+                    review_reason: None,
                     fee_entries,
                     transaction_type: TransactionTypeDto::AssetTransferOut(
                         AssetTransferOutMetadataDto {
@@ -449,6 +458,7 @@ impl From<IdentifiableTransactionWithIdentifiableEntries> for TransactionDto {
                     transaction_id,
                     date,
                     visibility: business::dtos::transaction_dto::TransactionVisibilityDto::Default,
+                    review_reason: None,
                     fee_entries,
                     transaction_type: TransactionTypeDto::AssetDividend(AssetDividendMetadataDto {
                         entry: t.entry.into(),
@@ -461,6 +471,7 @@ impl From<IdentifiableTransactionWithIdentifiableEntries> for TransactionDto {
                     transaction_id,
                     date,
                     visibility: business::dtos::transaction_dto::TransactionVisibilityDto::Default,
+                    review_reason: None,
                     fee_entries,
                     transaction_type: TransactionTypeDto::AssetBalanceTransfer(
                         AssetBalanceTransferMetadataDto {
@@ -476,6 +487,7 @@ impl From<IdentifiableTransactionWithIdentifiableEntries> for TransactionDto {
                     transaction_id,
                     date,
                     visibility: business::dtos::transaction_dto::TransactionVisibilityDto::Default,
+                    review_reason: None,
                     fee_entries,
                     transaction_type: TransactionTypeDto::AccountFees(AccountFeesMetadataDto {
                         entry: t.entry.into(),
@@ -488,6 +500,7 @@ impl From<IdentifiableTransactionWithIdentifiableEntries> for TransactionDto {
                     transaction_id,
                     date,
                     visibility: business::dtos::transaction_dto::TransactionVisibilityDto::Default,
+                    review_reason: None,
                     fee_entries,
                     transaction_type: TransactionTypeDto::CashBalanceTransfer(
                         CashBalanceTransferMetadataDto {
@@ -511,6 +524,7 @@ impl From<TransactionWithIdentifiableEntries> for TransactionDto {
                     transaction_id: None,
                     date,
                     visibility: business::dtos::transaction_dto::TransactionVisibilityDto::Default,
+                    review_reason: None,
                     fee_entries,
                     transaction_type: TransactionTypeDto::Regular(RegularTransactionMetadataDto {
                         description: t.description.map(|d| d.into_inner()),
@@ -525,6 +539,7 @@ impl From<TransactionWithIdentifiableEntries> for TransactionDto {
                     transaction_id: None,
                     date,
                     visibility: business::dtos::transaction_dto::TransactionVisibilityDto::Default,
+                    review_reason: None,
                     fee_entries,
                     transaction_type: TransactionTypeDto::CashTransferOut(
                         CashTransferOutMetadataDto {
@@ -539,6 +554,7 @@ impl From<TransactionWithIdentifiableEntries> for TransactionDto {
                     transaction_id: None,
                     date,
                     visibility: business::dtos::transaction_dto::TransactionVisibilityDto::Default,
+                    review_reason: None,
                     fee_entries,
                     transaction_type: TransactionTypeDto::CashTransferIn(
                         CashTransferInMetadataDto {
@@ -553,6 +569,7 @@ impl From<TransactionWithIdentifiableEntries> for TransactionDto {
                     transaction_id: None,
                     date,
                     visibility: business::dtos::transaction_dto::TransactionVisibilityDto::Default,
+                    review_reason: None,
                     fee_entries,
                     transaction_type: TransactionTypeDto::CashDividend(CashDividendMetadataDto {
                         entry: t.entry.into(),
@@ -566,6 +583,7 @@ impl From<TransactionWithIdentifiableEntries> for TransactionDto {
                     transaction_id: None,
                     date,
                     visibility: business::dtos::transaction_dto::TransactionVisibilityDto::Default,
+                    review_reason: None,
                     fee_entries,
                     transaction_type: TransactionTypeDto::AssetPurchase(AssetPurchaseMetadataDto {
                         purchase: t.purchase_change.into(),
@@ -579,6 +597,7 @@ impl From<TransactionWithIdentifiableEntries> for TransactionDto {
                     transaction_id: None,
                     date,
                     visibility: business::dtos::transaction_dto::TransactionVisibilityDto::Default,
+                    review_reason: None,
                     fee_entries,
                     transaction_type: TransactionTypeDto::AssetSale(AssetSaleMetadataDto {
                         sale: t.sale_entry.into(),
@@ -592,6 +611,7 @@ impl From<TransactionWithIdentifiableEntries> for TransactionDto {
                     transaction_id: None,
                     date,
                     visibility: business::dtos::transaction_dto::TransactionVisibilityDto::Default,
+                    review_reason: None,
                     fee_entries,
                     transaction_type: TransactionTypeDto::AssetTrade(AssetTradeMetadataDto {
                         outgoing_entry: t.outgoing_entry.into(),
@@ -605,6 +625,7 @@ impl From<TransactionWithIdentifiableEntries> for TransactionDto {
                     transaction_id: None,
                     date,
                     visibility: business::dtos::transaction_dto::TransactionVisibilityDto::Default,
+                    review_reason: None,
                     fee_entries,
                     transaction_type: TransactionTypeDto::AssetTransferIn(
                         AssetTransferInMetadataDto {
@@ -619,6 +640,7 @@ impl From<TransactionWithIdentifiableEntries> for TransactionDto {
                     transaction_id: None,
                     date,
                     visibility: business::dtos::transaction_dto::TransactionVisibilityDto::Default,
+                    review_reason: None,
                     fee_entries,
                     transaction_type: TransactionTypeDto::AssetTransferOut(
                         AssetTransferOutMetadataDto {
@@ -633,6 +655,7 @@ impl From<TransactionWithIdentifiableEntries> for TransactionDto {
                     transaction_id: None,
                     date,
                     visibility: business::dtos::transaction_dto::TransactionVisibilityDto::Default,
+                    review_reason: None,
                     fee_entries,
                     transaction_type: TransactionTypeDto::AssetDividend(AssetDividendMetadataDto {
                         entry: t.entry.into(),
@@ -645,6 +668,7 @@ impl From<TransactionWithIdentifiableEntries> for TransactionDto {
                     transaction_id: None,
                     date,
                     visibility: business::dtos::transaction_dto::TransactionVisibilityDto::Default,
+                    review_reason: None,
                     fee_entries,
                     transaction_type: TransactionTypeDto::AssetBalanceTransfer(
                         AssetBalanceTransferMetadataDto {
@@ -660,6 +684,7 @@ impl From<TransactionWithIdentifiableEntries> for TransactionDto {
                     transaction_id: None,
                     date,
                     visibility: business::dtos::transaction_dto::TransactionVisibilityDto::Default,
+                    review_reason: None,
                     fee_entries,
                     transaction_type: TransactionTypeDto::AccountFees(AccountFeesMetadataDto {
                         entry: t.entry.into(),
@@ -672,6 +697,7 @@ impl From<TransactionWithIdentifiableEntries> for TransactionDto {
                     transaction_id: None,
                     date,
                     visibility: business::dtos::transaction_dto::TransactionVisibilityDto::Default,
+                    review_reason: None,
                     fee_entries,
                     transaction_type: TransactionTypeDto::CashBalanceTransfer(
                         CashBalanceTransferMetadataDto {

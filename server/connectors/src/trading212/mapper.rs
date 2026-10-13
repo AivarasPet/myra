@@ -72,6 +72,8 @@ pub fn map_transaction(raw: &Value) -> MappedTransaction {
         date,
         description,
         asset_identifier: None,
+        isin: None,
+        underlying_symbol: None,
         quantity: None,
     })
 }
@@ -159,6 +161,8 @@ pub fn map_order(raw: &Value) -> MappedTransaction {
         date,
         description: format!("{side} {quantity} {ticker}"),
         asset_identifier: Some(ticker),
+        isin: None,
+        underlying_symbol: None,
         quantity: Some(quantity),
     })
 }
@@ -206,6 +210,8 @@ pub fn map_dividend(raw: &Value) -> MappedTransaction {
         date,
         description: format!("Dividend {ticker}"),
         asset_identifier: Some(ticker),
+        isin: None,
+        underlying_symbol: None,
         quantity: None,
     })
 }

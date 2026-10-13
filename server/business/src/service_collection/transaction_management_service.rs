@@ -332,6 +332,7 @@ impl TransactionManagementService {
         user_id: Uuid,
         pagination: PaginationModeDto,
         search_query: Option<String>,
+        needs_review: bool,
     ) -> anyhow::Result<CursorPageOfResultsDto<CombinedTransactionItem>> {
         let limit = pagination.page_size();
 
@@ -340,6 +341,7 @@ impl TransactionManagementService {
             user_id,
             pagination: pagination.into(),
             search_query,
+            needs_review,
         };
         let combined_query =
             transaction_queries::get_combined_transaction_ids_for_user(combined_params);
@@ -608,6 +610,64 @@ impl TransactionManagementService {
         self.transaction_metadata_service
             .update_metadata(&old_transaction, &mut new_transaction)
             .await?;
+
+        self.db
+            .execute(transaction_data_queries::clear_transaction_review_reason(
+                user_id,
+                transaction_id,
+            ))
+            .await?;
+
+        Ok(())
+    }
+
+    /// Rewrites the date, type and entries of transactions a sync owns. Unlike a user update it
+    /// leaves metadata, the connector link's edit flag and `review_reason` untouched.
+    pub(crate) async fn update_synced_transactions(
+        &self,
+        user_id: Uuid,
+        updates: Vec<(Uuid, TransactionDto)>,
+    ) -> anyhow::Result<()> {
+        if updates.is_empty() {
+            return Ok(());
+        }
+
+        let query_params = GetTransactionWithEntriesParams::by_transaction_ids(
+            updates.iter().map(|(id, _)| *id).collect(),
+        );
+        let models = self
+            .db
+            .fetch_all::<TransactionWithEntriesModel>(
+                transaction_queries::get_transaction_with_entries(query_params),
+            )
+            .await?;
+        if !models.iter().all(|x| x.user_id == user_id) {
+            return Err(anyhow::anyhow!("User_id is not the owner of transaction"));
+        }
+        let mut old_by_id: HashMap<Uuid, Transaction> =
+            create_transactions_from_transaction_with_entries_models(models)?
+                .into_iter()
+                .filter_map(|tx| tx.get_transaction_id().map(|id| (id, tx)))
+                .collect();
+
+        for (transaction_id, dto) in updates {
+            let old_transaction = old_by_id
+                .remove(&transaction_id)
+                .ok_or_else(|| anyhow::anyhow!("Transaction {transaction_id} not found"))?;
+            let mut new_transaction = create_transaction_from_dto(dto, user_id)?;
+            new_transaction.set_transaction_id(transaction_id);
+
+            self.transaction_service
+                .update_transaction_info(transaction_id, &old_transaction, &new_transaction)
+                .await?;
+            self.entries_service
+                .update_transaction_entries(
+                    transaction_id,
+                    old_transaction.get_entries(),
+                    new_transaction.get_entries_mut(),
+                )
+                .await?;
+        }
 
         Ok(())
     }

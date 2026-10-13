@@ -74,6 +74,12 @@ export interface AccountFeesIdentifiableTransaction {
      */
     'fees'?: Array<TransactionFeeItemWithEntryId> | null;
     /**
+     * Set when the transaction needs the user\'s review, e.g. a sync\'s placeholder opening buy. Cleared by any update of the transaction.
+     * @type {ReviewReason}
+     * @memberof AccountFeesIdentifiableTransaction
+     */
+    'review_reason'?: ReviewReason;
+    /**
      * 
      * @type {string}
      * @memberof AccountFeesIdentifiableTransaction
@@ -123,6 +129,12 @@ export interface AccountFeesRequiredIdentifiableTransaction {
      * @memberof AccountFeesRequiredIdentifiableTransaction
      */
     'fees'?: Array<TransactionFeeItemWithRequiredEntryId> | null;
+    /**
+     * Set when the transaction needs the user\'s review, e.g. a sync\'s placeholder opening buy. Cleared by any update of the transaction.
+     * @type {ReviewReason}
+     * @memberof AccountFeesRequiredIdentifiableTransaction
+     */
+    'review_reason'?: ReviewReason;
     /**
      * 
      * @type {string}
@@ -832,6 +844,12 @@ export interface AssetBalanceTransferIdentifiableTransaction {
      */
     'outgoing_change': TransactionEntryWithEntryId;
     /**
+     * Set when the transaction needs the user\'s review, e.g. a sync\'s placeholder opening buy. Cleared by any update of the transaction.
+     * @type {ReviewReason}
+     * @memberof AssetBalanceTransferIdentifiableTransaction
+     */
+    'review_reason'?: ReviewReason;
+    /**
      * 
      * @type {string}
      * @memberof AssetBalanceTransferIdentifiableTransaction
@@ -887,6 +905,12 @@ export interface AssetBalanceTransferRequiredIdentifiableTransaction {
      * @memberof AssetBalanceTransferRequiredIdentifiableTransaction
      */
     'outgoing_change': TransactionEntryWithRequiredEntryId;
+    /**
+     * Set when the transaction needs the user\'s review, e.g. a sync\'s placeholder opening buy. Cleared by any update of the transaction.
+     * @type {ReviewReason}
+     * @memberof AssetBalanceTransferRequiredIdentifiableTransaction
+     */
+    'review_reason'?: ReviewReason;
     /**
      * 
      * @type {string}
@@ -1070,6 +1094,12 @@ export interface AssetDividendIdentifiableTransaction {
      */
     'fees'?: Array<TransactionFeeItemWithEntryId> | null;
     /**
+     * Set when the transaction needs the user\'s review, e.g. a sync\'s placeholder opening buy. Cleared by any update of the transaction.
+     * @type {ReviewReason}
+     * @memberof AssetDividendIdentifiableTransaction
+     */
+    'review_reason'?: ReviewReason;
+    /**
      * 
      * @type {string}
      * @memberof AssetDividendIdentifiableTransaction
@@ -1119,6 +1149,12 @@ export interface AssetDividendRequiredIdentifiableTransaction {
      * @memberof AssetDividendRequiredIdentifiableTransaction
      */
     'fees'?: Array<TransactionFeeItemWithRequiredEntryId> | null;
+    /**
+     * Set when the transaction needs the user\'s review, e.g. a sync\'s placeholder opening buy. Cleared by any update of the transaction.
+     * @type {ReviewReason}
+     * @memberof AssetDividendRequiredIdentifiableTransaction
+     */
+    'review_reason'?: ReviewReason;
     /**
      * 
      * @type {string}
@@ -1542,6 +1578,12 @@ export interface AssetPurchaseIdentifiableTransaction {
      */
     'purchase_change': TransactionEntryWithEntryId;
     /**
+     * Set when the transaction needs the user\'s review, e.g. a sync\'s placeholder opening buy. Cleared by any update of the transaction.
+     * @type {ReviewReason}
+     * @memberof AssetPurchaseIdentifiableTransaction
+     */
+    'review_reason'?: ReviewReason;
+    /**
      * 
      * @type {string}
      * @memberof AssetPurchaseIdentifiableTransaction
@@ -1597,6 +1639,12 @@ export interface AssetPurchaseRequiredIdentifiableTransaction {
      * @memberof AssetPurchaseRequiredIdentifiableTransaction
      */
     'purchase_change': TransactionEntryWithRequiredEntryId;
+    /**
+     * Set when the transaction needs the user\'s review, e.g. a sync\'s placeholder opening buy. Cleared by any update of the transaction.
+     * @type {ReviewReason}
+     * @memberof AssetPurchaseRequiredIdentifiableTransaction
+     */
+    'review_reason'?: ReviewReason;
     /**
      * 
      * @type {string}
@@ -1799,6 +1847,12 @@ export interface AssetSaleIdentifiableTransaction {
      */
     'proceeds_entry': TransactionEntryWithEntryId;
     /**
+     * Set when the transaction needs the user\'s review, e.g. a sync\'s placeholder opening buy. Cleared by any update of the transaction.
+     * @type {ReviewReason}
+     * @memberof AssetSaleIdentifiableTransaction
+     */
+    'review_reason'?: ReviewReason;
+    /**
      * 
      * @type {TransactionEntryWithEntryId}
      * @memberof AssetSaleIdentifiableTransaction
@@ -1854,6 +1908,12 @@ export interface AssetSaleRequiredIdentifiableTransaction {
      * @memberof AssetSaleRequiredIdentifiableTransaction
      */
     'proceeds_entry': TransactionEntryWithRequiredEntryId;
+    /**
+     * Set when the transaction needs the user\'s review, e.g. a sync\'s placeholder opening buy. Cleared by any update of the transaction.
+     * @type {ReviewReason}
+     * @memberof AssetSaleRequiredIdentifiableTransaction
+     */
+    'review_reason'?: ReviewReason;
     /**
      * 
      * @type {TransactionEntryWithRequiredEntryId}
@@ -2049,6 +2109,12 @@ export interface AssetTradeIdentifiableTransaction {
      */
     'outgoing_entry': TransactionEntryWithEntryId;
     /**
+     * Set when the transaction needs the user\'s review, e.g. a sync\'s placeholder opening buy. Cleared by any update of the transaction.
+     * @type {ReviewReason}
+     * @memberof AssetTradeIdentifiableTransaction
+     */
+    'review_reason'?: ReviewReason;
+    /**
      * 
      * @type {string}
      * @memberof AssetTradeIdentifiableTransaction
@@ -2104,6 +2170,12 @@ export interface AssetTradeRequiredIdentifiableTransaction {
      * @memberof AssetTradeRequiredIdentifiableTransaction
      */
     'outgoing_entry': TransactionEntryWithRequiredEntryId;
+    /**
+     * Set when the transaction needs the user\'s review, e.g. a sync\'s placeholder opening buy. Cleared by any update of the transaction.
+     * @type {ReviewReason}
+     * @memberof AssetTradeRequiredIdentifiableTransaction
+     */
+    'review_reason'?: ReviewReason;
     /**
      * 
      * @type {string}
@@ -2287,6 +2359,12 @@ export interface AssetTransferInIdentifiableTransaction {
      */
     'fees'?: Array<TransactionFeeItemWithEntryId> | null;
     /**
+     * Set when the transaction needs the user\'s review, e.g. a sync\'s placeholder opening buy. Cleared by any update of the transaction.
+     * @type {ReviewReason}
+     * @memberof AssetTransferInIdentifiableTransaction
+     */
+    'review_reason'?: ReviewReason;
+    /**
      * 
      * @type {string}
      * @memberof AssetTransferInIdentifiableTransaction
@@ -2336,6 +2414,12 @@ export interface AssetTransferInRequiredIdentifiableTransaction {
      * @memberof AssetTransferInRequiredIdentifiableTransaction
      */
     'fees'?: Array<TransactionFeeItemWithRequiredEntryId> | null;
+    /**
+     * Set when the transaction needs the user\'s review, e.g. a sync\'s placeholder opening buy. Cleared by any update of the transaction.
+     * @type {ReviewReason}
+     * @memberof AssetTransferInRequiredIdentifiableTransaction
+     */
+    'review_reason'?: ReviewReason;
     /**
      * 
      * @type {string}
@@ -2501,6 +2585,12 @@ export interface AssetTransferOutIdentifiableTransaction {
      */
     'fees'?: Array<TransactionFeeItemWithEntryId> | null;
     /**
+     * Set when the transaction needs the user\'s review, e.g. a sync\'s placeholder opening buy. Cleared by any update of the transaction.
+     * @type {ReviewReason}
+     * @memberof AssetTransferOutIdentifiableTransaction
+     */
+    'review_reason'?: ReviewReason;
+    /**
      * 
      * @type {string}
      * @memberof AssetTransferOutIdentifiableTransaction
@@ -2550,6 +2640,12 @@ export interface AssetTransferOutRequiredIdentifiableTransaction {
      * @memberof AssetTransferOutRequiredIdentifiableTransaction
      */
     'fees'?: Array<TransactionFeeItemWithRequiredEntryId> | null;
+    /**
+     * Set when the transaction needs the user\'s review, e.g. a sync\'s placeholder opening buy. Cleared by any update of the transaction.
+     * @type {ReviewReason}
+     * @memberof AssetTransferOutRequiredIdentifiableTransaction
+     */
+    'review_reason'?: ReviewReason;
     /**
      * 
      * @type {string}
@@ -2849,6 +2945,12 @@ export interface CashBalanceTransferIdentifiableTransaction {
      */
     'outgoing_change': TransactionEntryWithEntryId;
     /**
+     * Set when the transaction needs the user\'s review, e.g. a sync\'s placeholder opening buy. Cleared by any update of the transaction.
+     * @type {ReviewReason}
+     * @memberof CashBalanceTransferIdentifiableTransaction
+     */
+    'review_reason'?: ReviewReason;
+    /**
      * 
      * @type {string}
      * @memberof CashBalanceTransferIdentifiableTransaction
@@ -2904,6 +3006,12 @@ export interface CashBalanceTransferRequiredIdentifiableTransaction {
      * @memberof CashBalanceTransferRequiredIdentifiableTransaction
      */
     'outgoing_change': TransactionEntryWithRequiredEntryId;
+    /**
+     * Set when the transaction needs the user\'s review, e.g. a sync\'s placeholder opening buy. Cleared by any update of the transaction.
+     * @type {ReviewReason}
+     * @memberof CashBalanceTransferRequiredIdentifiableTransaction
+     */
+    'review_reason'?: ReviewReason;
     /**
      * 
      * @type {string}
@@ -3093,6 +3201,12 @@ export interface CashDividendIdentifiableTransaction {
      */
     'origin_asset_id': number;
     /**
+     * Set when the transaction needs the user\'s review, e.g. a sync\'s placeholder opening buy. Cleared by any update of the transaction.
+     * @type {ReviewReason}
+     * @memberof CashDividendIdentifiableTransaction
+     */
+    'review_reason'?: ReviewReason;
+    /**
      * 
      * @type {string}
      * @memberof CashDividendIdentifiableTransaction
@@ -3148,6 +3262,12 @@ export interface CashDividendRequiredIdentifiableTransaction {
      * @memberof CashDividendRequiredIdentifiableTransaction
      */
     'origin_asset_id': number;
+    /**
+     * Set when the transaction needs the user\'s review, e.g. a sync\'s placeholder opening buy. Cleared by any update of the transaction.
+     * @type {ReviewReason}
+     * @memberof CashDividendRequiredIdentifiableTransaction
+     */
+    'review_reason'?: ReviewReason;
     /**
      * 
      * @type {string}
@@ -3368,6 +3488,12 @@ export interface CashTransferInIdentifiableTransaction {
      */
     'fees'?: Array<TransactionFeeItemWithEntryId> | null;
     /**
+     * Set when the transaction needs the user\'s review, e.g. a sync\'s placeholder opening buy. Cleared by any update of the transaction.
+     * @type {ReviewReason}
+     * @memberof CashTransferInIdentifiableTransaction
+     */
+    'review_reason'?: ReviewReason;
+    /**
      * 
      * @type {string}
      * @memberof CashTransferInIdentifiableTransaction
@@ -3417,6 +3543,12 @@ export interface CashTransferInRequiredIdentifiableTransaction {
      * @memberof CashTransferInRequiredIdentifiableTransaction
      */
     'fees'?: Array<TransactionFeeItemWithRequiredEntryId> | null;
+    /**
+     * Set when the transaction needs the user\'s review, e.g. a sync\'s placeholder opening buy. Cleared by any update of the transaction.
+     * @type {ReviewReason}
+     * @memberof CashTransferInRequiredIdentifiableTransaction
+     */
+    'review_reason'?: ReviewReason;
     /**
      * 
      * @type {string}
@@ -3582,6 +3714,12 @@ export interface CashTransferOutIdentifiableTransaction {
      */
     'fees'?: Array<TransactionFeeItemWithEntryId> | null;
     /**
+     * Set when the transaction needs the user\'s review, e.g. a sync\'s placeholder opening buy. Cleared by any update of the transaction.
+     * @type {ReviewReason}
+     * @memberof CashTransferOutIdentifiableTransaction
+     */
+    'review_reason'?: ReviewReason;
+    /**
      * 
      * @type {string}
      * @memberof CashTransferOutIdentifiableTransaction
@@ -3631,6 +3769,12 @@ export interface CashTransferOutRequiredIdentifiableTransaction {
      * @memberof CashTransferOutRequiredIdentifiableTransaction
      */
     'fees'?: Array<TransactionFeeItemWithRequiredEntryId> | null;
+    /**
+     * Set when the transaction needs the user\'s review, e.g. a sync\'s placeholder opening buy. Cleared by any update of the transaction.
+     * @type {ReviewReason}
+     * @memberof CashTransferOutRequiredIdentifiableTransaction
+     */
+    'review_reason'?: ReviewReason;
     /**
      * 
      * @type {string}
@@ -5881,6 +6025,12 @@ export interface RegularIdentifiableTransaction {
      */
     'fees'?: Array<TransactionFeeItemWithEntryId> | null;
     /**
+     * Set when the transaction needs the user\'s review, e.g. a sync\'s placeholder opening buy. Cleared by any update of the transaction.
+     * @type {ReviewReason}
+     * @memberof RegularIdentifiableTransaction
+     */
+    'review_reason'?: ReviewReason;
+    /**
      * 
      * @type {string}
      * @memberof RegularIdentifiableTransaction
@@ -5942,6 +6092,12 @@ export interface RegularRequiredIdentifiableTransaction {
      * @memberof RegularRequiredIdentifiableTransaction
      */
     'fees'?: Array<TransactionFeeItemWithRequiredEntryId> | null;
+    /**
+     * Set when the transaction needs the user\'s review, e.g. a sync\'s placeholder opening buy. Cleared by any update of the transaction.
+     * @type {ReviewReason}
+     * @memberof RegularRequiredIdentifiableTransaction
+     */
+    'review_reason'?: ReviewReason;
     /**
      * 
      * @type {string}
@@ -6129,6 +6285,19 @@ export type RequiredIdentifiableTransaction = { type: 'account_fees' } & Account
  * @export
  */
 export type RequiredTransaction = { type: 'account_fees' } & AccountFeesRequiredTransaction | { type: 'asset_balance_transfer' } & AssetBalanceTransferRequiredTransaction | { type: 'asset_dividend' } & AssetDividendRequiredTransaction | { type: 'asset_purchase' } & AssetPurchaseRequiredTransaction | { type: 'asset_sale' } & AssetSaleRequiredTransaction | { type: 'asset_trade' } & AssetTradeRequiredTransaction | { type: 'asset_transfer_in' } & AssetTransferInRequiredTransaction | { type: 'asset_transfer_out' } & AssetTransferOutRequiredTransaction | { type: 'cash_balance_transfer' } & CashBalanceTransferRequiredTransaction | { type: 'cash_dividend' } & CashDividendRequiredTransaction | { type: 'cash_transfer_in' } & CashTransferInRequiredTransaction | { type: 'cash_transfer_out' } & CashTransferOutRequiredTransaction | { type: 'regular' } & RegularRequiredTransaction;
+
+/**
+ * Why a transaction needs the user\'s review.
+ * @export
+ * @enum {string}
+ */
+
+export const ReviewReason = {
+    AutoOpeningBuy: 'auto_opening_buy'
+} as const;
+
+export type ReviewReason = typeof ReviewReason[keyof typeof ReviewReason];
+
 
 /**
  * 
@@ -14532,10 +14701,11 @@ export const TransactionsApiAxiosParamCreator = function (configuration?: Config
          * @param {number} [start] 
          * @param {number} [count] 
          * @param {string} [query] 
+         * @param {boolean} [needsReview] Only transactions that need the user\&#39;s review (&#x60;review_reason&#x60; set), and groups that contain one.
          * @param {*} [options] Override http request option.
          * @throws {RequiredError}
          */
-        getTransactions: async (userId: string, limit?: number, cursor?: string, start?: number, count?: number, query?: string, options: RawAxiosRequestConfig = {}): Promise<RequestArgs> => {
+        getTransactions: async (userId: string, limit?: number, cursor?: string, start?: number, count?: number, query?: string, needsReview?: boolean, options: RawAxiosRequestConfig = {}): Promise<RequestArgs> => {
             // verify required parameter 'userId' is not null or undefined
             assertParamExists('getTransactions', 'userId', userId)
             const localVarPath = `/api/users/{user_id}/transactions`
@@ -14573,6 +14743,10 @@ export const TransactionsApiAxiosParamCreator = function (configuration?: Config
 
             if (query !== undefined) {
                 localVarQueryParameter['query'] = query;
+            }
+
+            if (needsReview !== undefined) {
+                localVarQueryParameter['needs_review'] = needsReview;
             }
 
 
@@ -14773,11 +14947,12 @@ export const TransactionsApiFp = function(configuration?: Configuration) {
          * @param {number} [start] 
          * @param {number} [count] 
          * @param {string} [query] 
+         * @param {boolean} [needsReview] Only transactions that need the user\&#39;s review (&#x60;review_reason&#x60; set), and groups that contain one.
          * @param {*} [options] Override http request option.
          * @throws {RequiredError}
          */
-        async getTransactions(userId: string, limit?: number, cursor?: string, start?: number, count?: number, query?: string, options?: RawAxiosRequestConfig): Promise<(axios?: AxiosInstance, basePath?: string) => AxiosPromise<CombinedTransactionsPage>> {
-            const localVarAxiosArgs = await localVarAxiosParamCreator.getTransactions(userId, limit, cursor, start, count, query, options);
+        async getTransactions(userId: string, limit?: number, cursor?: string, start?: number, count?: number, query?: string, needsReview?: boolean, options?: RawAxiosRequestConfig): Promise<(axios?: AxiosInstance, basePath?: string) => AxiosPromise<CombinedTransactionsPage>> {
+            const localVarAxiosArgs = await localVarAxiosParamCreator.getTransactions(userId, limit, cursor, start, count, query, needsReview, options);
             const localVarOperationServerIndex = configuration?.serverIndex ?? 0;
             const localVarOperationServerBasePath = operationServerMap['TransactionsApi.getTransactions']?.[localVarOperationServerIndex]?.url;
             return (axios, basePath) => createRequestFunction(localVarAxiosArgs, globalAxios, BASE_PATH, configuration)(axios, localVarOperationServerBasePath || basePath);
@@ -14867,11 +15042,12 @@ export const TransactionsApiFactory = function (configuration?: Configuration, b
          * @param {number} [start] 
          * @param {number} [count] 
          * @param {string} [query] 
+         * @param {boolean} [needsReview] Only transactions that need the user\&#39;s review (&#x60;review_reason&#x60; set), and groups that contain one.
          * @param {*} [options] Override http request option.
          * @throws {RequiredError}
          */
-        getTransactions(userId: string, limit?: number, cursor?: string, start?: number, count?: number, query?: string, options?: RawAxiosRequestConfig): AxiosPromise<CombinedTransactionsPage> {
-            return localVarFp.getTransactions(userId, limit, cursor, start, count, query, options).then((request) => request(axios, basePath));
+        getTransactions(userId: string, limit?: number, cursor?: string, start?: number, count?: number, query?: string, needsReview?: boolean, options?: RawAxiosRequestConfig): AxiosPromise<CombinedTransactionsPage> {
+            return localVarFp.getTransactions(userId, limit, cursor, start, count, query, needsReview, options).then((request) => request(axios, basePath));
         },
         /**
          * Sets a transaction\'s visibility: default, ghost (pending review), or hidden.
@@ -14948,11 +15124,12 @@ export interface TransactionsApiInterface {
      * @param {number} [start] 
      * @param {number} [count] 
      * @param {string} [query] 
+     * @param {boolean} [needsReview] Only transactions that need the user\&#39;s review (&#x60;review_reason&#x60; set), and groups that contain one.
      * @param {*} [options] Override http request option.
      * @throws {RequiredError}
      * @memberof TransactionsApiInterface
      */
-    getTransactions(userId: string, limit?: number, cursor?: string, start?: number, count?: number, query?: string, options?: RawAxiosRequestConfig): AxiosPromise<CombinedTransactionsPage>;
+    getTransactions(userId: string, limit?: number, cursor?: string, start?: number, count?: number, query?: string, needsReview?: boolean, options?: RawAxiosRequestConfig): AxiosPromise<CombinedTransactionsPage>;
 
     /**
      * Sets a transaction\'s visibility: default, ghost (pending review), or hidden.
@@ -15033,12 +15210,13 @@ export class TransactionsApi extends BaseAPI implements TransactionsApiInterface
      * @param {number} [start] 
      * @param {number} [count] 
      * @param {string} [query] 
+     * @param {boolean} [needsReview] Only transactions that need the user\&#39;s review (&#x60;review_reason&#x60; set), and groups that contain one.
      * @param {*} [options] Override http request option.
      * @throws {RequiredError}
      * @memberof TransactionsApi
      */
-    public getTransactions(userId: string, limit?: number, cursor?: string, start?: number, count?: number, query?: string, options?: RawAxiosRequestConfig) {
-        return TransactionsApiFp(this.configuration).getTransactions(userId, limit, cursor, start, count, query, options).then((request) => request(this.axios, this.basePath));
+    public getTransactions(userId: string, limit?: number, cursor?: string, start?: number, count?: number, query?: string, needsReview?: boolean, options?: RawAxiosRequestConfig) {
+        return TransactionsApiFp(this.configuration).getTransactions(userId, limit, cursor, start, count, query, needsReview, options).then((request) => request(this.axios, this.basePath));
     }
 
     /**

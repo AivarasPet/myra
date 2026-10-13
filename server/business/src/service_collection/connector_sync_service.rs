@@ -1,9 +1,11 @@
 #[mockall_double::double]
 use dal::database_context::MyraDb;
+use dal::enums::transaction_types::DatabaseTransactionTypes;
 use dal::job_queue::JobQueueHandle;
 use dal::models::connector_models::{
     ActiveStoredBindingRow, AddConnectorProviderAccountModel, ConnectorBindingRow,
-    ConnectorRawPageRow, ConnectorTransactionRow, UpdateProviderAccountSyncResultModel,
+    ConnectorRawPageRow, ConnectorTransactionRow, PositionTimelineEntryRow,
+    UpdateProviderAccountSyncResultModel,
 };
 use dal::queries::connector_queries;
 use dal::query_params::connector_params::{GetConnectorBindingsParams, GetRawPagesParams};
@@ -13,6 +15,7 @@ use dal::secrets::SecretProvider;
 
 use connectors::client_supplied::{ClientSuppliedConnector, ClientSuppliedStream};
 use connectors::models::sync::RawPage;
+use connectors::models::transaction::ProviderTransaction;
 use connectors::port::{Connector, ConnectorStore, SyncParams, SyncRunOutcome};
 use connectors::provider::{CredentialSource, ProviderKind};
 
@@ -24,15 +27,21 @@ use crate::dtos::connectors::{
     ConnectorConnectionDto, CredentialModeDto, SyncDispatchDto, SyncOutcomeDto, SyncReportDto,
     TransientSyncCredentialDto,
 };
-use crate::dtos::transaction_dto::TransactionVisibilityDto;
+use crate::dtos::transaction_dto::{TransactionDto, TransactionTypeDto, TransactionVisibilityDto};
 use crate::jobs::SyncConnectorBindingJob;
 use crate::providers::connector_store::BusinessConnectorStore;
 
 use crate::entities::connectors::connector_transaction_batch::ConnectorTransactionBatch;
+use crate::entities::connectors::opening_buys::{
+    is_synthetic_external_id, opening_buy_changed, plan_opening_buys, required_opening_buys,
+    ExistingOpeningBuy, PositionEvent, RequiredOpeningBuy, SYNTHETIC_OPENING_BUY_PREFIX,
+};
 use crate::entities::connectors::provider_transaction_import::{
     ProviderTransactionImport, TransactionImportOutcome,
 };
+use crate::entities::transactions::metadata::ConnectorLinkMeta;
 use crate::entities::transactions::transaction::Transaction;
+use crate::entities::transactions::transaction_types::create_transaction_from_dto;
 
 use super::asset_service::AssetsService;
 use super::connector_service::ConnectorService;
@@ -602,7 +611,7 @@ impl ConnectorSyncService {
         };
 
         let classified = batch.classify(&existing_rows);
-        report.unchanged = classified.unchanged;
+        report.unchanged = classified.unchanged.len();
         report.conflicts = classified.conflicts.len();
         report.amended = classified.amended.len();
 
@@ -622,44 +631,137 @@ impl ConnectorSyncService {
             );
         }
 
-        let imports: Vec<ProviderTransactionImport> = classified
-            .new
+        let to_import = |tx: &ProviderTransaction| {
+            ProviderTransactionImport::new(
+                tx.clone(),
+                binding_row.sverto_account_id,
+                visibility,
+                binding_id,
+            )
+        };
+        let imports: Vec<ProviderTransactionImport> =
+            classified.new.iter().copied().map(to_import).collect();
+        // Trades already in the ledger are resolved alongside the new rows so every instrument
+        // the batch trades gets its opening buys reconciled, including on a re-projection.
+        let stored_trades: Vec<ProviderTransactionImport> = classified
+            .stored()
             .into_iter()
-            .map(|tx| {
-                ProviderTransactionImport::new(
-                    tx.clone(),
-                    binding_row.sverto_account_id,
-                    visibility,
-                    binding_id,
-                )
-            })
+            .map(to_import)
+            .filter(ProviderTransactionImport::is_trade)
             .collect();
+        let resolvable: Vec<&ProviderTransactionImport> =
+            imports.iter().chain(&stored_trades).collect();
 
         let mut needed_tickers: HashSet<String> = HashSet::new();
         for import in &imports {
             needed_tickers.insert(import.currency().to_string());
+        }
+        for import in &resolvable {
             needed_tickers.extend(import.instrument_ticker_candidates());
         }
         let resolved = self.assets.resolve_tickers(user_id, needed_tickers).await?;
 
-        let mut entities: Vec<Transaction> = Vec::new();
-        for import in imports {
-            let cash_asset_id = resolved.get(import.currency()).copied();
-            let instrument_asset_id = import
+        // Rows whose ticker matched (typically trades) teach which listing an ISIN refers to,
+        // so dividends on the same ISIN resolve to that asset even when it's ambiguous in assets.
+        let mut resolved_isins: HashMap<String, i32> = HashMap::new();
+        let mut needed_isins: HashSet<String> = HashSet::new();
+        for import in &resolvable {
+            let Some(isin) = import.instrument_isin() else {
+                continue;
+            };
+            match import
                 .instrument_ticker_candidates()
                 .iter()
-                .find_map(|candidate| resolved.get(candidate).copied());
+                .find_map(|candidate| resolved.get(candidate).copied())
+            {
+                Some(asset_id) => {
+                    resolved_isins.entry(isin.to_string()).or_insert(asset_id);
+                }
+                None => {
+                    needed_isins.insert(isin.to_string());
+                }
+            }
+        }
+        needed_isins.retain(|isin| !resolved_isins.contains_key(isin));
+        for (isin, asset_id) in self
+            .assets
+            .resolve_isins(user_id, binding_row.sverto_account_id, needed_isins)
+            .await?
+        {
+            resolved_isins.insert(isin, asset_id);
+        }
+
+        let instrument_asset_ids: Vec<Option<i32>> = resolvable
+            .iter()
+            .map(|import| {
+                import
+                    .instrument_ticker_candidates()
+                    .iter()
+                    .find_map(|candidate| resolved.get(candidate).copied())
+                    .or_else(|| {
+                        import
+                            .instrument_isin()
+                            .and_then(|isin| resolved_isins.get(isin).copied())
+                    })
+            })
+            .collect();
+
+        let root_symbol_key = |import: &ProviderTransactionImport| {
+            import
+                .instrument_underlying_symbol()
+                .map(|root| (root.to_string(), import.currency().to_string()))
+        };
+        let needed_root_symbols: HashSet<(String, String)> = resolvable
+            .iter()
+            .zip(&instrument_asset_ids)
+            .filter(|(_, asset_id)| asset_id.is_none())
+            .filter_map(|(import, _)| root_symbol_key(import))
+            .collect();
+        let resolved_root_symbols = self
+            .assets
+            .resolve_root_symbols(user_id, binding_row.sverto_account_id, needed_root_symbols)
+            .await?;
+
+        let instrument_asset_ids: Vec<Option<i32>> = resolvable
+            .iter()
+            .zip(instrument_asset_ids)
+            .map(|(import, asset_id)| {
+                asset_id.or_else(|| {
+                    root_symbol_key(import).and_then(|key| resolved_root_symbols.get(&key).copied())
+                })
+            })
+            .collect();
+        let (new_instrument_asset_ids, stored_instrument_asset_ids) =
+            instrument_asset_ids.split_at(imports.len());
+
+        let mut entities: Vec<Transaction> = Vec::new();
+        let mut traded_asset_ids: HashSet<i32> = stored_instrument_asset_ids
+            .iter()
+            .flatten()
+            .copied()
+            .collect();
+        for (import, &instrument_asset_id) in imports.iter().zip(new_instrument_asset_ids) {
+            let cash_asset_id = resolved.get(import.currency()).copied();
 
             match import.try_into_transaction(user_id, cash_asset_id, instrument_asset_id)? {
                 TransactionImportOutcome::Ready(entity) => {
+                    if import.is_trade() {
+                        traded_asset_ids.extend(instrument_asset_id);
+                    }
                     entities.push(entity);
                 }
                 TransactionImportOutcome::Unresolvable(reason) => {
                     report.unresolved += 1;
-                    tracing::info!(
+                    tracing::warn!(
                         binding_id = %binding_id,
                         external_id = %import.external_id(),
                         reason,
+                        ticker_candidates = ?import.instrument_ticker_candidates(),
+                        isin = ?import.instrument_isin(),
+                        underlying_symbol = ?import.instrument_underlying_symbol(),
+                        currency = %import.currency(),
+                        amount = %import.amount(),
+                        date = %import.date().date(),
                         "provider transaction not imported — unresolvable"
                     );
                 }
@@ -672,6 +774,16 @@ impl ConnectorSyncService {
                 .await?;
             report.new_transactions = entities.len();
         }
+
+        self.reconcile_opening_buys(
+            user_id,
+            binding_id,
+            binding_row.sverto_account_id,
+            visibility,
+            traded_asset_ids,
+            &mut report,
+        )
+        .await?;
 
         // Projection checkpoint advanced on the binding (the fetch outcome is recorded on the
         // provider account by the caller's fetch phase).
@@ -693,8 +805,245 @@ impl ConnectorSyncService {
             conflicts = report.conflicts,
             unresolved = report.unresolved,
             duplicates = report.duplicates,
+            opening_buys_created = report.opening_buys_created,
+            opening_buys_updated = report.opening_buys_updated,
+            opening_buys_deleted = report.opening_buys_deleted,
             "projection committed"
         );
         Ok(report)
+    }
+
+    /// Covers sells of shares the synced history never bought with flagged synthetic buys, and
+    /// brings the binding's unedited synthetic buys for the traded assets in line with the
+    /// account's current timeline. Runs inside the projection's DB transaction.
+    async fn reconcile_opening_buys(
+        &self,
+        user_id: Uuid,
+        binding_id: Uuid,
+        account_id: Uuid,
+        visibility: TransactionVisibilityDto,
+        asset_ids: HashSet<i32>,
+        report: &mut SyncReportDto,
+    ) -> anyhow::Result<()> {
+        if asset_ids.is_empty() {
+            return Ok(());
+        }
+
+        let rows = self
+            .db
+            .fetch_all::<PositionTimelineEntryRow>(
+                connector_queries::get_position_timeline_entries(
+                    binding_id,
+                    account_id,
+                    asset_ids.into_iter().collect(),
+                ),
+            )
+            .await?;
+
+        let mut existing: Vec<ExistingOpeningBuy> = Vec::new();
+        let mut events: Vec<PositionEvent> = Vec::new();
+        let mut edited_synthetic: Vec<(Uuid, String)> = Vec::new();
+        for row in rows {
+            let synthetic_external_id = row
+                .external_id
+                .clone()
+                .filter(|external_id| is_synthetic_external_id(external_id));
+            if let Some(external_id) = synthetic_external_id.clone() {
+                if row.edited_by_user == Some(false) {
+                    if !existing
+                        .iter()
+                        .any(|buy| buy.transaction_id == row.transaction_id)
+                    {
+                        existing.push(ExistingOpeningBuy {
+                            transaction_id: row.transaction_id,
+                            external_id,
+                        });
+                    }
+                    continue;
+                }
+                edited_synthetic.push((row.transaction_id, external_id));
+            }
+
+            let is_binding_sell = row.type_id == DatabaseTransactionTypes::AssetSale
+                && row.quantity.is_sign_negative()
+                && synthetic_external_id.is_none();
+            events.push(PositionEvent {
+                asset_id: row.asset_id,
+                transaction_id: row.transaction_id,
+                date: row.date_transacted,
+                quantity: row.quantity,
+                sell_external_id: row.external_id.filter(|_| is_binding_sell),
+            });
+        }
+
+        let required = required_opening_buys(&events);
+
+        if !edited_synthetic.is_empty() {
+            let without_edited: Vec<PositionEvent> = events
+                .iter()
+                .filter(|event| {
+                    !edited_synthetic
+                        .iter()
+                        .any(|(transaction_id, _)| *transaction_id == event.transaction_id)
+                })
+                .cloned()
+                .collect();
+            let required_without_edited = required_opening_buys(&without_edited);
+            for (_, external_id) in &edited_synthetic {
+                if !required_without_edited
+                    .iter()
+                    .any(|buy| &buy.external_id == external_id)
+                {
+                    tracing::warn!(
+                        binding_id = %binding_id,
+                        external_id = %external_id,
+                        "user-edited synthetic opening buy is no longer needed — left as is"
+                    );
+                }
+            }
+        }
+
+        let required_external_ids: Vec<String> =
+            required.iter().map(|buy| buy.external_id.clone()).collect();
+        let taken_external_ids: HashSet<String> = if required_external_ids.is_empty() {
+            HashSet::new()
+        } else {
+            self.db
+                .fetch_all::<ConnectorTransactionRow>(
+                    connector_queries::get_connector_transactions_by_external_ids(
+                        binding_id,
+                        required_external_ids,
+                    ),
+                )
+                .await?
+                .into_iter()
+                .map(|row| row.external_id)
+                .filter(|external_id| !existing.iter().any(|buy| &buy.external_id == external_id))
+                .collect()
+        };
+
+        let plan = plan_opening_buys(required, existing, &taken_external_ids);
+
+        for buy in &plan.owned_by_user {
+            tracing::warn!(
+                binding_id = %binding_id,
+                external_id = %buy.external_id,
+                shortfall = %buy.quantity,
+                "sell still lacks a position but its synthetic opening buy was edited or deleted by the user — not recreated"
+            );
+        }
+
+        if !plan.delete.is_empty() {
+            self.db
+                .execute(
+                    connector_queries::delete_connector_transactions_by_external_ids(
+                        binding_id,
+                        plan.delete
+                            .iter()
+                            .map(|buy| buy.external_id.clone())
+                            .collect(),
+                    ),
+                )
+                .await?;
+            self.transaction_management
+                .delete_transactions_inner(
+                    user_id,
+                    plan.delete.iter().map(|buy| buy.transaction_id).collect(),
+                )
+                .await?;
+            report.opening_buys_deleted = plan.delete.len();
+        }
+
+        if plan.create.is_empty() && plan.keep.is_empty() {
+            return Ok(());
+        }
+
+        let earliest_imported: Option<OffsetDateTime> = self
+            .db
+            .fetch_one_scalar(connector_queries::get_binding_earliest_transaction_date(
+                binding_id,
+                SYNTHETIC_OPENING_BUY_PREFIX,
+            ))
+            .await?;
+
+        let lookup_ids: HashSet<Uuid> = plan
+            .create
+            .iter()
+            .map(|buy| buy.sell_transaction_id)
+            .chain(
+                plan.keep
+                    .iter()
+                    .flat_map(|(existing, buy)| [existing.transaction_id, buy.sell_transaction_id]),
+            )
+            .collect();
+        let dtos: HashMap<Uuid, TransactionDto> = self
+            .transaction_management
+            .get_transactions_by_ids(user_id, lookup_ids.into_iter().collect())
+            .await?
+            .into_iter()
+            .filter_map(|dto| dto.transaction_id.map(|id| (id, dto)))
+            .collect();
+
+        let desired_dto = |buy: &RequiredOpeningBuy| -> Option<TransactionDto> {
+            let sell = dtos.get(&buy.sell_transaction_id)?;
+            let TransactionTypeDto::AssetSale(sale) = &sell.transaction_type else {
+                return None;
+            };
+            let date = earliest_imported.map_or(sell.date, |earliest| earliest.min(sell.date));
+            buy.to_transaction_dto(sale.sale.quantity, &sale.proceeds, date, visibility)
+        };
+
+        let mut new_entities: Vec<Transaction> = Vec::new();
+        for buy in &plan.create {
+            let Some(dto) = desired_dto(buy) else {
+                tracing::warn!(
+                    binding_id = %binding_id,
+                    external_id = %buy.external_id,
+                    "sell cannot be priced — synthetic opening buy not created"
+                );
+                continue;
+            };
+            let mut entity = create_transaction_from_dto(dto, user_id)?;
+            entity.set_connector_link(Some(ConnectorLinkMeta {
+                binding_id,
+                external_id: buy.external_id.clone(),
+                external_hash: buy.external_id.clone(),
+            }));
+            new_entities.push(entity);
+        }
+        if !new_entities.is_empty() {
+            self.transaction_management
+                .add_transactions(&mut new_entities)
+                .await?;
+            report.opening_buys_created = new_entities.len();
+        }
+
+        let mut updates: Vec<(Uuid, TransactionDto)> = Vec::new();
+        for (existing, buy) in &plan.keep {
+            let (Some(current), Some(mut desired)) =
+                (dtos.get(&existing.transaction_id), desired_dto(buy))
+            else {
+                continue;
+            };
+            if !opening_buy_changed(current, &desired) {
+                continue;
+            }
+            if let (
+                TransactionTypeDto::AssetPurchase(current_purchase),
+                TransactionTypeDto::AssetPurchase(desired_purchase),
+            ) = (&current.transaction_type, &mut desired.transaction_type)
+            {
+                desired_purchase.purchase.entry_id = current_purchase.purchase.entry_id;
+                desired_purchase.sale.entry_id = current_purchase.sale.entry_id;
+            }
+            desired.visibility = current.visibility;
+            updates.push((existing.transaction_id, desired));
+        }
+        report.opening_buys_updated = updates.len();
+        self.transaction_management
+            .update_synced_transactions(user_id, updates)
+            .await?;
+
+        Ok(())
     }
 }
