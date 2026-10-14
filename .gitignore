@@ -7,7 +7,6 @@ database/seed/raw-data/*
 CLAUDE.md
 AGENTS.md
 .claude/*
-!.claude/skills/
 
 .env
 .secrets.dev
