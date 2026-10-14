@@ -3,8 +3,6 @@ use sqlx::postgres::PgPoolCopyExt;
 use sqlx::{postgres::PgRow, AssertSqlSafe, FromRow, PgPool, Postgres, Transaction};
 
 use anyhow::Result;
-use std::future::Future;
-use std::pin::Pin;
 use std::sync::Arc;
 
 use tokio::sync::Mutex as AsyncMutex;
@@ -12,14 +10,10 @@ use tokio::sync::Mutex as AsyncMutex;
 use crate::database_connection::MyraDbConnection;
 use crate::queries::{DbCopyCommand, DbQueryWithValues};
 
-pub type AfterCommitAction =
-    Box<dyn FnOnce() -> Pin<Box<dyn Future<Output = Result<()>> + Send>> + Send>;
-
 #[derive(Clone)]
 pub struct MyraDb {
     pool: PgPool,
     transaction: Arc<AsyncMutex<Option<Transaction<'static, Postgres>>>>,
-    after_commit: Arc<AsyncMutex<Vec<AfterCommitAction>>>,
 }
 
 impl MyraDb {
@@ -27,7 +21,6 @@ impl MyraDb {
         Self {
             pool: connection.pool,
             transaction: Arc::new(AsyncMutex::new(None)),
-            after_commit: Arc::new(AsyncMutex::new(Vec::new())),
         }
     }
 
@@ -38,8 +31,6 @@ impl MyraDb {
         if tx_guard.is_none() {
             let tx = self.pool.begin().await?;
             *tx_guard = Some(tx);
-            // Left over from a transaction a failed statement rolled back.
-            self.after_commit.lock().await.clear();
         }
 
         Ok(())
@@ -57,35 +48,14 @@ impl MyraDb {
                 "No transaction to commit".into(),
             ));
         }
-        drop(tx_guard);
-
-        let actions = std::mem::take(&mut *self.after_commit.lock().await);
-        for action in actions {
-            if let Err(e) = action().await {
-                tracing::warn!(error = ?e, "after-commit action failed");
-            }
-        }
 
         Ok(())
-    }
-
-    /// Runs `action` after the open transaction commits, or now if none is open.
-    pub async fn run_after_commit(&self, action: AfterCommitAction) -> Result<()> {
-        {
-            let tx_guard = self.transaction.lock().await;
-            if tx_guard.is_some() {
-                self.after_commit.lock().await.push(action);
-                return Ok(());
-            }
-        }
-        action().await
     }
 
     #[tracing::instrument(level = "debug", skip_all)]
     pub async fn rollback_transaction(&self) -> Result<(), sqlx::Error> {
         let mut tx_guard = self.transaction.lock().await;
 
-        self.after_commit.lock().await.clear();
         if let Some(tx) = tx_guard.take() {
             tx.rollback().await?;
         } else {
@@ -341,7 +311,6 @@ mock! {
         pub async fn start_transaction(&self) -> Result<(), sqlx::Error>;
         pub async fn commit_transaction(&self) -> Result<(), sqlx::Error>;
         pub async fn rollback_transaction(&self) -> Result<(), sqlx::Error>;
-        pub async fn run_after_commit(&self, action: AfterCommitAction) -> Result<()>;
         pub async fn fetch_all<T: 'static>(
             &self,
             query: DbQueryWithValues,
