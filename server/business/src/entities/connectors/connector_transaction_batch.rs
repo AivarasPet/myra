@@ -16,7 +16,6 @@ pub(crate) struct ClassifiedBatch<'a> {
 }
 
 impl<'a> ClassifiedBatch<'a> {
-    /// Rows already in the binding's ledger: unchanged, amended and conflicting alike.
     pub fn stored(&self) -> Vec<&'a ProviderTransaction> {
         self.unchanged
             .iter()

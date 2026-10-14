@@ -30,9 +30,7 @@ fn decimal(row: &Value, key: &str) -> Option<Decimal> {
     row.get(key).and_then(crate::util::parse_decimal)
 }
 
-/// Flex dates come as `yyyyMMdd` (optionally followed by `;HHmmss`) by default, or
-/// `yyyy-MM-dd` when the query is configured that way. Time of day is dropped: Flex
-/// reports it in the account's local zone without an offset.
+/// Time of day is dropped: Flex gives it in local time without an offset.
 pub(crate) fn parse_flex_date(raw: &str) -> Option<OffsetDateTime> {
     let digits: String = raw
         .chars()
@@ -43,13 +41,10 @@ pub(crate) fn parse_flex_date(raw: &str) -> Option<OffsetDateTime> {
     Some(date.midnight().assume_utc())
 }
 
-/// Maps an IBKR listing exchange to the `SYMBOL.EXCHANGE` ticker convention used by
-/// assets. Unknown exchanges fall back to the bare symbol.
 pub(crate) fn instrument_identifier(row: &Value) -> Option<String> {
     let exchange = attr(row, "listingExchange");
     let symbol = attr(row, "symbol")?;
-    // IBKR marks alternative LSE trading lines with a lowercase suffix (`BATSl`, `HMEFz`),
-    // and separates share classes with a space (`PBR A`) where assets use a dash (`PBR-A`).
+    // LSE lines carry a lowercase suffix (`BATSl`); share-class spaces become dashes.
     let symbol = match exchange {
         Some("LSE" | "LSEETF") => symbol.trim_end_matches(|c: char| c.is_ascii_lowercase()),
         _ => symbol,
@@ -96,8 +91,7 @@ fn is_isin(value: &str) -> bool {
             .all(|b| b.is_ascii_uppercase() || b.is_ascii_digit())
 }
 
-/// Uses the `isin` attribute when the Flex query includes it, otherwise the ISIN IBKR
-/// embeds in dividend descriptions (`MSFT(US5949181045) Cash Dividend ...`).
+/// Falls back to the ISIN IBKR embeds in dividend descriptions.
 pub(crate) fn instrument_isin(row: &Value) -> Option<String> {
     if let Some(isin) = attr(row, "isin").filter(|isin| is_isin(isin)) {
         return Some(isin.to_string());
@@ -108,8 +102,7 @@ pub(crate) fn instrument_isin(row: &Value) -> Option<String> {
     is_isin(candidate).then(|| candidate.to_string())
 }
 
-/// IBKR books some dividends against temporary corporate-action instruments (dividend
-/// rights such as `SHELL.DVR` or `SHELL1.DI` listed on `CORPACT`) instead of the real stock.
+/// Dividend rights like `SHELL.DVR` on `CORPACT` stand in for the real stock.
 fn is_corporate_action_instrument(row: &Value) -> bool {
     attr(row, "listingExchange") == Some("CORPACT") || attr(row, "subCategory") == Some("RIGHT")
 }

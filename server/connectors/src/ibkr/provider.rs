@@ -6,8 +6,7 @@ use crate::port::{Connector, ConnectorStore};
 use crate::provider::{CredentialSource, Provider, ProviderKind};
 use crate::Result;
 
-/// Interactive Brokers via the Flex Web Service. `provider_key_id` holds the Flex Query
-/// ID (not secret); the stored credential is the Flex token.
+/// `provider_key_id` is the Flex Query ID; the stored credential is the Flex token.
 pub struct IbkrProvider;
 
 #[async_trait]

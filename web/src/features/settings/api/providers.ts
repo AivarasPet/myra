@@ -9,7 +9,6 @@ export type ProviderKind = (typeof PROVIDER_KINDS)[number]
 
 export type ProviderCredential = "oauth" | "apiKey"
 
-/** Labels for API-key providers whose credential is an identifier plus a secret. */
 export interface ProviderKeyFields {
   readonly keyIdLabel: string
   readonly secretLabel: string

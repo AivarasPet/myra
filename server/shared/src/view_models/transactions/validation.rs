@@ -421,7 +421,6 @@ impl Validatable for SetTransactionVisibilityRequestViewModel {
     }
 }
 
-/// `action` is set only by syncs and cleared by editing the transaction.
 fn validate_settable_visibility(visibility: TransactionVisibility) -> Result<(), Vec<FieldError>> {
     if visibility == TransactionVisibility::Action {
         return Err(vec![FieldError {

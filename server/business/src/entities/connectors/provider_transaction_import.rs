@@ -14,9 +14,7 @@ use crate::entities::transactions::transaction_types::create_transaction_from_dt
 
 const IMPORT_CATEGORY_ID: i32 = 76;
 
-// TODO: move the Trading212-specific ticker handling (these aliases and the `_EQ` / `_US` / LSE `l`
-// suffix parsing in `instrument_ticker_candidates`) into the Trading212 mapper, so it emits
-// `SYMBOL.EXCHANGE` like other connectors and this shared code keeps only provider-neutral fallbacks.
+// TODO: move the Trading212 ticker handling (aliases, `_EQ`/`_US`/`l` suffixes) to its mapper.
 const TICKER_ALIASES: &[(&str, &str)] = &[("FB_US_EQ", "META.NASDAQ"), ("JAYl_EQ", "S5WA.F")];
 
 pub(crate) enum TransactionImportOutcome {
@@ -113,8 +111,7 @@ impl ProviderTransactionImport {
                 return vec![format!("{base}.LSE")];
             }
         }
-        // Asset data sometimes lists a US stock under the other US exchange than the one
-        // the provider reports (e.g. ETSY as `.NYSE`), so try both.
+        // Asset data sometimes lists a US stock under the other US exchange (e.g. ETSY as `.NYSE`).
         if let Some(base) = stripped.strip_suffix(".NASDAQ") {
             return vec![stripped.to_string(), format!("{base}.NYSE")];
         }
@@ -174,9 +171,7 @@ impl ProviderTransactionImport {
                     })
                 }
             }
-            // TODO: import dividend reversals (e.g. IBKR undoing a corporate-action dividend). A Cash
-            // Dividend cannot hold a negative amount, so they are skipped and logged as unresolvable
-            // for now, which leaves the account's cash off by the reversed amount.
+            // TODO: import dividend reversals; a Cash Dividend can't hold a negative amount.
             (None, Some(_)) if tx.amount.is_sign_negative() => {
                 return Err("negative dividend (reversal) is not supported");
             }

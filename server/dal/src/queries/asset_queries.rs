@@ -136,8 +136,6 @@ pub fn get_asset_ids_by_isins(
         .into()
 }
 
-/// The asset's summed quantity over `entries`, for a caller that narrows `entries` to an account
-/// or a user.
 fn position_of_asset() -> SelectStatement {
     Query::select()
         .expr(Func::coalesce([
@@ -159,7 +157,6 @@ fn is_held(position: SelectStatement) -> SimpleExpr {
     SimpleExpr::SubQuery(None, Box::new(position.into_sub_query_statement())).ne(0)
 }
 
-/// The account currently holds a non-zero position in the asset.
 fn held_in_account(account_id: Uuid) -> SimpleExpr {
     is_held(
         position_of_asset()
@@ -168,7 +165,6 @@ fn held_in_account(account_id: Uuid) -> SimpleExpr {
     )
 }
 
-/// The user currently holds a non-zero position in the asset across their accounts.
 fn held_by_user(user_id: Uuid) -> SimpleExpr {
     is_held(
         position_of_asset()
@@ -182,9 +178,7 @@ fn held_by_user(user_id: Uuid) -> SimpleExpr {
     )
 }
 
-/// Stock and fund candidates whose ticker root (the part before the first `.`,
-/// case-insensitive) matches one of `root_symbols`, with the facts needed to pick one: whether
-/// the account or the user currently holds a non-zero position, and the base currency.
+/// Stock and fund assets whose ticker root (before the first `.`) matches, case-insensitively.
 #[macros::named_query]
 pub fn get_asset_candidates_by_root_symbols(
     user_id: Uuid,

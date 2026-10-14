@@ -1,8 +1,6 @@
 use dal::models::asset_models::AssetRootSymbolCandidate;
 
-/// Holdings win: a single candidate held in the account, else a single one held anywhere by
-/// the user. When the user holds several, only one quoted in `currency` qualifies; lower tiers
-/// are not consulted. Without holdings, the single candidate quoted in `currency` wins.
+/// Tiers: held in the account, held by the user, quoted in `currency`.
 pub(crate) fn select_root_symbol_candidate(
     candidates: &[AssetRootSymbolCandidate],
     currency: &str,

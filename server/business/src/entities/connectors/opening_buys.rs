@@ -17,16 +17,13 @@ const SHORTFALL_EPSILON: Decimal = dec!(0.000001);
 
 const CASH_AMOUNT_DECIMAL_PLACES: u32 = 8;
 
-/// One transaction's change to an account's position in an instrument.
 #[derive(Clone, Debug)]
 pub(crate) struct PositionEvent {
     pub asset_id: i32,
     pub transaction_id: Uuid,
     pub date: OffsetDateTime,
     pub quantity: Decimal,
-    /// Set when the transaction is a sell imported by the binding, i.e. one that may get a
-    /// synthetic opening buy. Shortfalls of other outflows (manual sells, transfers) still
-    /// reset the running position but are left for the user.
+    /// Set for sells the binding imported: only those get synthetic buys.
     pub sell_external_id: Option<String>,
 }
 
@@ -47,10 +44,8 @@ pub(crate) struct ExistingOpeningBuy {
 #[derive(Debug, Default, PartialEq, Eq)]
 pub(crate) struct OpeningBuyPlan {
     pub create: Vec<RequiredOpeningBuy>,
-    /// Existing synthetic buys that are still needed, paired with what they should now contain.
     pub keep: Vec<(ExistingOpeningBuy, RequiredOpeningBuy)>,
     pub delete: Vec<ExistingOpeningBuy>,
-    /// Needed buys whose external id is already taken by a buy the user edited or deleted.
     pub owned_by_user: Vec<RequiredOpeningBuy>,
 }
 
@@ -62,10 +57,7 @@ pub(crate) fn is_synthetic_external_id(external_id: &str) -> bool {
     external_id.starts_with(SYNTHETIC_OPENING_BUY_PREFIX)
 }
 
-/// Replays each asset's position in date order (buys before sells on the same instant) and
-/// returns one buy per sell that takes the position below zero by more than the epsilon,
-/// covering exactly that shortfall. The running position resets to zero after every shortfall.
-/// Events of the same transaction and asset are netted first.
+/// One buy per sell taking the position below -epsilon; the position then resets to zero.
 pub(crate) fn required_opening_buys(events: &[PositionEvent]) -> Vec<RequiredOpeningBuy> {
     let mut netted: BTreeMap<(i32, Uuid), PositionEvent> = BTreeMap::new();
     for event in events {
@@ -114,10 +106,7 @@ pub(crate) fn required_opening_buys(events: &[PositionEvent]) -> Vec<RequiredOpe
     required
 }
 
-/// Matches the needed buys against the binding's unedited synthetic buys by external id.
-/// `taken_external_ids` are synthetic external ids already linked on the binding to something
-/// other than an unedited synthetic buy (the user edited or deleted it) — those are never
-/// recreated.
+/// Buys in `taken_external_ids` (edited or deleted by the user) are never recreated.
 pub(crate) fn plan_opening_buys(
     required: Vec<RequiredOpeningBuy>,
     existing: Vec<ExistingOpeningBuy>,
@@ -143,10 +132,6 @@ pub(crate) fn plan_opening_buys(
 }
 
 impl RequiredOpeningBuy {
-    /// An Asset Purchase of the shortfall priced at the sell's price per share
-    /// (`|proceeds| / |sold quantity|`), paid in the sell's currency, without fees.
-    /// Marked `action`: its date and price are placeholders for the user to correct.
-    /// `None` when the sell has no quantity to price by.
     pub fn to_transaction_dto(
         &self,
         sell_quantity: Decimal,
@@ -176,8 +161,6 @@ impl RequiredOpeningBuy {
     }
 }
 
-/// Whether an existing synthetic buy differs from what it should now contain in date,
-/// quantity, currency or amount.
 pub(crate) fn opening_buy_changed(existing: &TransactionDto, desired: &TransactionDto) -> bool {
     let (
         TransactionTypeDto::AssetPurchase(existing_purchase),

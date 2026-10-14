@@ -12,7 +12,6 @@ use tokio::sync::Mutex as AsyncMutex;
 use crate::database_connection::MyraDbConnection;
 use crate::queries::{DbCopyCommand, DbQueryWithValues};
 
-/// Work that must not be seen before the transaction's writes are, e.g. a queued job.
 pub type AfterCommitAction =
     Box<dyn FnOnce() -> Pin<Box<dyn Future<Output = Result<()>> + Send>> + Send>;
 
@@ -70,8 +69,7 @@ impl MyraDb {
         Ok(())
     }
 
-    /// Runs `action` once the open transaction commits, or right away when none is open. A
-    /// rollback drops it.
+    /// Runs `action` after the open transaction commits, or now if none is open.
     pub async fn run_after_commit(&self, action: AfterCommitAction) -> Result<()> {
         {
             let tx_guard = self.transaction.lock().await;

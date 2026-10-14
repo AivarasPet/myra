@@ -38,7 +38,6 @@ export interface AccountConnector {
   lastSyncFailed: boolean
   lastSyncError: string | null
   syncedThrough: number | null
-  /** A sync is running on this account; another one would only queue behind it. */
   syncInProgress: boolean
   writesPostDirectly: boolean
 }

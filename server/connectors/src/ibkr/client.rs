@@ -15,9 +15,7 @@ use crate::Result;
 
 const SEND_REQUEST_URL: &str =
     "https://ndcdyn.interactivebrokers.com/AccountManagement/FlexWebService/SendRequest";
-/// Pinned rather than taken from the SendRequest reply: the reply points at a different
-/// host (`gdcdyn`) that some resolvers can't resolve, and the token shouldn't follow a
-/// server-supplied URL.
+/// Pinned: the reply's `gdcdyn` host may not resolve, and the token mustn't follow it.
 const GET_STATEMENT_URL: &str =
     "https://ndcdyn.interactivebrokers.com/AccountManagement/FlexWebService/GetStatement";
 const FLEX_VERSION: &str = "3";
@@ -27,21 +25,16 @@ const STREAM: &str = "statement";
 const MAX_WINDOW_DAYS: i64 = 364;
 const MAX_HISTORY_DAYS: i64 = 5 * 365;
 const MAX_ATTEMPTS: u32 = 5;
-/// Doubles per attempt (6 s, 12 s, 24 s, ...): repeated Flex requests count towards IBKR's
-/// lockout (code 1025), so back off rather than poll at a fixed rate.
+/// Doubles per attempt: repeated requests count towards IBKR's lockout (code 1025).
 const INITIAL_RETRY_DELAY: Duration = Duration::from_secs(6);
-/// Flex codes meaning "try again later": generation in progress, rate limited, server busy.
 const RETRYABLE_CODES: [u32; 5] = [1001, 1009, 1018, 1019, 1021];
-/// Returned when the requested period has no statement, e.g. before the account opened.
 const STATEMENT_NOT_AVAILABLE: u32 = 1003;
 
 pub struct IbkrFlexClient {
-    // Not the traced client: Flex takes the token as a query parameter, and the tracing
-    // middleware records full request URLs in exported spans.
+    // Untraced: the token is a query parameter and spans record full URLs.
     http: reqwest::Client,
     query_id: String,
     token: String,
-    /// Read once per sync: each read is a full Flex statement request.
     account_opened: tokio::sync::OnceCell<Date>,
 }
 
@@ -147,8 +140,7 @@ impl IbkrFlexClient {
     }
 }
 
-/// One line per Flex reply, so a failed or empty window can be explained from the logs. Never
-/// logs the token or the reference code (which fetches the statement together with the token).
+/// Never logs the token or the reference code.
 fn log_reply(step: &str, period: Option<(Date, Date)>, attempt: u32, reply: &FlexReply) {
     let period = period.map(|(from, to)| format!("{from}..{to}"));
     match reply {
@@ -194,8 +186,7 @@ impl Connector for IbkrFlexClient {
         from: Option<OffsetDateTime>,
         cursor: Option<SyncCursor>,
     ) -> Result<FetchedPage> {
-        // Flex data is end-of-day, so the window stops at yesterday (UTC is ahead of
-        // the US exchange day IBKR reports in).
+        // Flex data is end-of-day.
         let last_day = OffsetDateTime::now_utc().date() - time::Duration::days(1);
         let mut window_start = cursor
             .as_ref()
@@ -205,9 +196,7 @@ impl Connector for IbkrFlexClient {
             .or_else(|| from.map(|f| f.date()))
             .unwrap_or(last_day - time::Duration::days(MAX_HISTORY_DAYS))
             .min(last_day);
-        // A walk spanning several windows (a first sync) starts at the history floor, usually
-        // before the account opened, where Flex refuses the window (1003). Start at the opening
-        // date instead; one-window incremental syncs skip the extra request.
+        // A multi-window walk would start before the account opened, which Flex refuses (1003).
         if cursor.is_none() && window_start + time::Duration::days(MAX_WINDOW_DAYS) < last_day {
             match self.account_opened().await {
                 Ok(opened) => window_start = window_start.max(opened.min(last_day)),
@@ -225,9 +214,7 @@ impl Connector for IbkrFlexClient {
             .await?
         {
             Some(rows) => rows,
-            // Flex refuses periods starting before the account opened, so resume from the
-            // opening date rather than dropping the window. Any other unavailability is a
-            // real error, otherwise a broken query would sync "successfully" with nothing.
+            // Flex refuses periods before the account opened; any other unavailability is an error.
             None => {
                 let opened = self.account_opened().await?;
                 if opened > window_end {

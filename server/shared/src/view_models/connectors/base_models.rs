@@ -70,7 +70,6 @@ pub struct ConnectorBindingViewModel {
     pub last_sync_at: Option<time::OffsetDateTime>,
     pub last_sync_status: Option<String>,
     pub last_sync_error: Option<String>,
-    /// A sync holds the provider account (its claim is fresh); another sync would wait.
     pub sync_in_progress: bool,
     #[serde(with = "timestamp")]
     #[schema(value_type = i64)]

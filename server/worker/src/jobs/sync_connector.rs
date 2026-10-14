@@ -16,8 +16,6 @@ impl WorkerJob for SyncConnectorBindingJob {
         RetryPolicy::standard()
     }
 
-    /// A held provider-account claim (another sync running) is a conflict worth a few retries;
-    /// everything else comes from the provider or the projection. Neither is an AI error.
     fn classify_error(error: &anyhow::Error) -> AiError {
         if error.downcast_ref::<BusinessConflictError>().is_some() {
             AiError::ConcurrencyLimited

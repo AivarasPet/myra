@@ -147,8 +147,7 @@ impl AssetsService {
         Ok(rows.into_iter().map(|row| (row.ticker, row.id)).collect())
     }
 
-    /// An ISIN identifies a security, not a listing, so several assets can share one.
-    /// Ambiguous ISINs resolve only when exactly one candidate is already held in the account.
+    /// An ambiguous ISIN resolves only to the single listing held in the account.
     #[tracing::instrument(level = "debug", skip_all, fields(user_id = %user_id))]
     pub async fn resolve_isins(
         &self,
@@ -185,8 +184,6 @@ impl AssetsService {
             .collect())
     }
 
-    /// Resolves `(root symbol, currency)` keys for rows the provider booked against a
-    /// pseudo-instrument. Never creates assets; see `select_root_symbol_candidate`.
     #[tracing::instrument(level = "debug", skip_all, fields(user_id = %user_id))]
     pub async fn resolve_root_symbols(
         &self,

@@ -523,7 +523,6 @@ impl ConnectorSyncService {
         }
     }
 
-    /// For exits before the fetch phase records its outcome, which releases the claim itself.
     async fn release_provider_account_claim(&self, provider_account_ref: Uuid) {
         if let Err(e) = self
             .db
@@ -682,8 +681,7 @@ impl ConnectorSyncService {
         };
         let imports: Vec<ProviderTransactionImport> =
             classified.new.iter().copied().map(to_import).collect();
-        // Trades already in the ledger are resolved alongside the new rows so every instrument
-        // the batch trades gets its opening buys reconciled, including on a re-projection.
+        // Existing trades are resolved too, so a re-projection reconciles every traded instrument.
         let stored_trades: Vec<ProviderTransactionImport> = classified
             .stored()
             .into_iter()
@@ -702,8 +700,7 @@ impl ConnectorSyncService {
         }
         let resolved = self.assets.resolve_tickers(user_id, needed_tickers).await?;
 
-        // Rows whose ticker matched (typically trades) teach which listing an ISIN refers to,
-        // so dividends on the same ISIN resolve to that asset even when it's ambiguous in assets.
+        // Ticker-matched rows tell which listing an ambiguous ISIN refers to.
         let mut resolved_isins: HashMap<String, i32> = HashMap::new();
         let mut needed_isins: HashSet<String> = HashSet::new();
         for import in &resolvable {
@@ -853,9 +850,6 @@ impl ConnectorSyncService {
         Ok(report)
     }
 
-    /// Covers sells of shares the synced history never bought with flagged synthetic buys, and
-    /// brings the binding's unedited synthetic buys for the traded assets in line with the
-    /// account's current timeline. Runs inside the projection's DB transaction.
     async fn reconcile_opening_buys(
         &self,
         user_id: Uuid,

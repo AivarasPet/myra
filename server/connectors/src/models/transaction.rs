@@ -10,13 +10,10 @@ pub struct ProviderTransaction {
     pub date: time::OffsetDateTime,
     pub description: String,
     pub asset_identifier: Option<String>,
-    /// Fallback for resolving the instrument when `asset_identifier` matches no asset ticker.
-    /// Not part of `external_hash`: it identifies the same instrument, not new content.
+    /// Resolution fallback when `asset_identifier` matches no ticker; not part of `external_hash`.
     #[serde(default)]
     pub isin: Option<String>,
-    /// Root symbol of the real instrument when the provider books the row against a
-    /// temporary pseudo-instrument (e.g. a corporate-action dividend right). Last-resort
-    /// resolution hint; not part of `external_hash`.
+    /// Real instrument behind a pseudo-instrument row; not part of `external_hash`.
     #[serde(default)]
     pub underlying_symbol: Option<String>,
     pub quantity: Option<Decimal>,

@@ -16,8 +16,7 @@ impl JobQueueHandle {
         Self { pool, db: None }
     }
 
-    /// A handle whose pushes wait for `db`'s open transaction to commit, so a worker never
-    /// picks up a job about rows it cannot see yet, or that a rollback removed.
+    /// Pushes wait for `db`'s open transaction to commit.
     pub fn bound_to(&self, db: MyraDb) -> Self {
         Self {
             pool: self.pool.clone(),

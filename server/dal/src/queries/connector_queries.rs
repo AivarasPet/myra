@@ -30,8 +30,7 @@ use crate::{
     },
 };
 
-/// A sync claim older than this is treated as left behind by a crashed sync. Running syncs refresh
-/// their claim after every fetched page; one IBKR Flex page can take ~15 minutes of retries.
+/// Older claims belong to crashed syncs; running syncs refresh theirs after every page.
 const PROVIDER_ACCOUNT_CLAIM_EXPIRY_MINUTES: i32 = 20;
 
 #[macros::named_query]
@@ -551,8 +550,6 @@ pub fn claim_provider_account_for_fetch(provider_account_ref: Uuid) -> DbQueryWi
         .into()
 }
 
-/// Heartbeat of a running fetch: keeps its claim fresher than the expiry, so expiry only frees
-/// claims of crashed syncs. A released claim stays released.
 #[macros::named_query]
 pub fn refresh_provider_account_fetch_claim(provider_account_ref: Uuid) -> DbQueryWithValues {
     Query::update()
@@ -668,8 +665,6 @@ pub fn delete_connector_transactions_by_external_ids(
         .into()
 }
 
-/// Earliest `date_transacted` among the binding's linked transactions, ignoring links whose
-/// external id starts with `excluded_external_id_prefix`. NULL when the binding has none.
 #[macros::named_query]
 pub fn get_binding_earliest_transaction_date(
     binding_id: Uuid,
@@ -714,8 +709,6 @@ pub fn get_binding_earliest_transaction_date(
         .into()
 }
 
-/// Every entry of the given non-currency assets in the account, with the transaction's date and
-/// type and — when the transaction is linked to `binding_id` — its external id and edit flag.
 #[macros::named_query]
 pub fn get_position_timeline_entries(
     binding_id: Uuid,

@@ -7,8 +7,7 @@ use serde_json::{Map, Value};
 use crate::ibkr::models::FlexReply;
 use crate::Result;
 
-/// Key added to every statement row naming the Flex element it came from
-/// (`Trade`, `CashTransaction`, ...), since rows from all sections share one page.
+/// Names the Flex section a row came from; rows of all sections share one page.
 pub(crate) const SECTION_KEY: &str = "_section";
 
 const ROW_ELEMENTS: [&str; 5] = [

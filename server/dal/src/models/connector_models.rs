@@ -45,8 +45,6 @@ pub struct ConnectorTransactionRow {
     pub edited_by_user: bool,
 }
 
-/// One instrument entry of an account, with the binding's connector link (if any) of its
-/// transaction.
 #[derive(sqlx::FromRow, Debug)]
 pub struct PositionTimelineEntryRow {
     pub asset_id: i32,

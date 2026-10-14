@@ -621,8 +621,7 @@ impl TransactionManagementService {
         Ok(())
     }
 
-    /// Rewrites the date, type and entries of transactions a sync owns. Unlike a user update it
-    /// leaves metadata, the connector link's edit flag and visibility untouched.
+    /// Unlike a user update, leaves metadata, the edit flag and visibility untouched.
     pub(crate) async fn update_synced_transactions(
         &self,
         user_id: Uuid,
