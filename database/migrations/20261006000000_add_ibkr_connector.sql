@@ -1,3 +1,7 @@
+INSERT INTO connector_provider (kind, display_name) VALUES
+    ('ibkr', 'Interactive Brokers')
+ON CONFLICT (kind) DO NOTHING;
+
 ALTER TABLE transaction DROP CONSTRAINT IF EXISTS transaction_visibility_check;
 
 ALTER TABLE transaction
