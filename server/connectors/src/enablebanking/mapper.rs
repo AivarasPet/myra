@@ -67,7 +67,6 @@ pub fn map_transaction(tx: &Value) -> MappedTransaction {
         description,
         asset_identifier: None,
         isin: None,
-        underlying_symbol: None,
         quantity: None,
     })
 }

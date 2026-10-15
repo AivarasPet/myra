@@ -10,7 +10,6 @@ pub enum TransactionVisibility {
     Default,
     Ghost,
     Hidden,
-    /// Needs the user's action (e.g. a sync's placeholder buy); any edit resets it to `default`.
     Action,
 }
 

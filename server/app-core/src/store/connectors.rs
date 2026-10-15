@@ -85,11 +85,16 @@ pub async fn list_aspsps(
         .await?;
     ok_or_err(resp.status, &resp.body)?;
     let parsed: ListAspspsResponseViewModel =
-        serde_json::from_str(&resp.body).map_err(|e| ApiError::Parse { reason: e.to_string() })?;
+        serde_json::from_str(&resp.body).map_err(|e| ApiError::Parse {
+            reason: e.to_string(),
+        })?;
     Ok(parsed
         .aspsps
         .into_iter()
-        .map(|a| Aspsp { name: a.name, country: a.country })
+        .map(|a| Aspsp {
+            name: a.name,
+            country: a.country,
+        })
         .collect())
 }
 

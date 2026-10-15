@@ -64,11 +64,14 @@ impl ProviderTransactionImport {
             .and(self.transaction.isin.as_deref())
     }
 
-    pub fn instrument_underlying_symbol(&self) -> Option<&str> {
-        self.transaction
-            .asset_identifier
-            .as_ref()
-            .and(self.transaction.underlying_symbol.as_deref())
+    /// Ticker without the exchange suffix, for dividends only: a wrong trade match would create a holding.
+    pub fn dividend_root_symbol(&self) -> Option<String> {
+        if self.transaction.quantity.is_some() {
+            return None;
+        }
+        let ticker = self.instrument_ticker_candidates().into_iter().next()?;
+        let root = ticker.split('.').next().unwrap_or(&ticker);
+        Some(root.to_string())
     }
 
     pub fn is_trade(&self) -> bool {
@@ -199,5 +202,55 @@ impl ProviderTransactionImport {
             fee_entries: vec![],
             transaction_type,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use time::macros::datetime;
+
+    use super::*;
+
+    fn import(asset_identifier: &str, quantity: Option<Decimal>) -> ProviderTransactionImport {
+        ProviderTransactionImport::new(
+            ProviderTransaction {
+                external_id: "1".to_string(),
+                amount: Decimal::ONE,
+                currency: "EUR".to_string(),
+                date: datetime!(2026-09-15 0:00 UTC),
+                description: String::new(),
+                asset_identifier: Some(asset_identifier.to_string()),
+                isin: None,
+                quantity,
+            },
+            Uuid::nil(),
+            TransactionVisibilityDto::Default,
+            Uuid::nil(),
+        )
+    }
+
+    #[test]
+    fn dividend_root_symbol_strips_exchange_from_normalised_ticker() {
+        let cases = [
+            ("AAPL.NASDAQ", "AAPL"),
+            ("AAPL_US_EQ", "AAPL"),
+            ("SHELL", "SHELL"),
+            ("PBR-A", "PBR-A"),
+        ];
+        for (identifier, expected) in cases {
+            assert_eq!(
+                import(identifier, None).dividend_root_symbol().as_deref(),
+                Some(expected),
+                "{identifier}"
+            );
+        }
+    }
+
+    #[test]
+    fn trades_have_no_root_symbol() {
+        assert_eq!(
+            import("SHELL", Some(Decimal::ONE)).dividend_root_symbol(),
+            None
+        );
     }
 }

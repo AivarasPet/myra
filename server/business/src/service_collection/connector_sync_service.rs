@@ -746,8 +746,8 @@ impl ConnectorSyncService {
 
         let root_symbol_key = |import: &ProviderTransactionImport| {
             import
-                .instrument_underlying_symbol()
-                .map(|root| (root.to_string(), import.currency().to_string()))
+                .dividend_root_symbol()
+                .map(|root| (root, import.currency().to_string()))
         };
         let needed_root_symbols: HashSet<(String, String)> = resolvable
             .iter()
@@ -796,7 +796,7 @@ impl ConnectorSyncService {
                         reason,
                         ticker_candidates = ?import.instrument_ticker_candidates(),
                         isin = ?import.instrument_isin(),
-                        underlying_symbol = ?import.instrument_underlying_symbol(),
+                        root_symbol = ?import.dividend_root_symbol(),
                         currency = %import.currency(),
                         amount = %import.amount(),
                         date = %import.date().date(),

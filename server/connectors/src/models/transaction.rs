@@ -11,11 +11,7 @@ pub struct ProviderTransaction {
     pub description: String,
     pub asset_identifier: Option<String>,
     /// Resolution fallback when `asset_identifier` matches no ticker; not part of `external_hash`.
-    #[serde(default)]
     pub isin: Option<String>,
-    /// Real instrument behind a pseudo-instrument row; not part of `external_hash`.
-    #[serde(default)]
-    pub underlying_symbol: Option<String>,
     pub quantity: Option<Decimal>,
 }
 

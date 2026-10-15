@@ -185,7 +185,6 @@ pub fn map_trade(raw: &Value) -> MappedTransaction {
         description: format!("{side} {} {asset_identifier}", quantity.abs()),
         asset_identifier: Some(asset_identifier),
         isin: instrument_isin(raw),
-        underlying_symbol: None,
         quantity: Some(quantity),
     })
 }
@@ -219,17 +218,13 @@ pub fn map_cash_transaction(raw: &Value) -> MappedTransaction {
         return skipped(external_id, "missing or unparseable date");
     };
     let tx_type = attr(raw, "type").unwrap_or("unknown");
-    let (asset_identifier, isin, underlying_symbol) = if !DIVIDEND_TYPES.contains(&tx_type) {
-        (None, None, None)
+    let (asset_identifier, isin) = if !DIVIDEND_TYPES.contains(&tx_type) {
+        (None, None)
     } else if is_corporate_action_instrument(raw) {
         // The pseudo-instrument's ISIN is throwaway and never matches an asset.
-        (
-            instrument_identifier(raw),
-            None,
-            corporate_action_root_symbol(raw),
-        )
+        (corporate_action_root_symbol(raw), None)
     } else {
-        (instrument_identifier(raw), instrument_isin(raw), None)
+        (instrument_identifier(raw), instrument_isin(raw))
     };
     let description = attr(raw, "description").unwrap_or(tx_type).to_string();
 
@@ -241,7 +236,6 @@ pub fn map_cash_transaction(raw: &Value) -> MappedTransaction {
         description,
         asset_identifier,
         isin,
-        underlying_symbol,
         quantity: None,
     })
 }
@@ -454,7 +448,7 @@ mod tests {
     }
 
     #[test]
-    fn maps_corporate_action_dividend_with_root_symbol_hint() {
+    fn maps_corporate_action_dividend_to_root_symbol() {
         for symbol in [
             "SHELL.DVR",
             "SHELL.DRT",
@@ -468,8 +462,7 @@ mod tests {
             let tx = provider(map_cash_transaction(&corporate_action_dividend(
                 symbol, "0.33",
             )));
-            assert_eq!(tx.underlying_symbol.as_deref(), Some("SHELL"), "{symbol}");
-            assert_eq!(tx.asset_identifier.as_deref(), Some(symbol), "{symbol}");
+            assert_eq!(tx.asset_identifier.as_deref(), Some("SHELL"), "{symbol}");
             assert_eq!(tx.isin, None, "{symbol}");
             assert_eq!(tx.quantity, None, "{symbol}");
         }
@@ -481,21 +474,21 @@ mod tests {
             "PBR A.DVR",
             "0.33",
         )));
-        assert_eq!(tx.underlying_symbol.as_deref(), Some("PBR-A"));
+        assert_eq!(tx.asset_identifier.as_deref(), Some("PBR-A"));
     }
 
     #[test]
-    fn maps_corporate_action_dividend_reversal_with_root_symbol_hint() {
+    fn maps_corporate_action_dividend_reversal_to_root_symbol() {
         let tx = provider(map_cash_transaction(&corporate_action_dividend(
             "SHELL.DVR",
             "-0.33",
         )));
         assert_eq!(tx.amount, dec("-0.33"));
-        assert_eq!(tx.underlying_symbol.as_deref(), Some("SHELL"));
+        assert_eq!(tx.asset_identifier.as_deref(), Some("SHELL"));
     }
 
     #[test]
-    fn regular_dividend_has_no_root_symbol_hint() {
+    fn regular_dividend_keeps_exchange_ticker_and_isin() {
         let tx = provider(map_cash_transaction(&json!({
             "currency": "USD",
             "type": "Dividends",
@@ -507,12 +500,12 @@ mod tests {
             "transactionID": "333",
             "dateTime": "20260312",
         })));
-        assert_eq!(tx.underlying_symbol, None);
+        assert_eq!(tx.asset_identifier.as_deref(), Some("MSFT.NASDAQ"));
         assert_eq!(tx.isin.as_deref(), Some("US5949181045"));
     }
 
     #[test]
-    fn non_dividend_corporate_action_row_has_no_root_symbol_hint() {
+    fn non_dividend_corporate_action_row_has_no_instrument() {
         let tx = provider(map_cash_transaction(&json!({
             "currency": "EUR",
             "type": "Other Fees",
@@ -523,7 +516,6 @@ mod tests {
             "transactionID": "337",
             "dateTime": "20260915",
         })));
-        assert_eq!(tx.underlying_symbol, None);
         assert_eq!(tx.asset_identifier, None);
     }
 

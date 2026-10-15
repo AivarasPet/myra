@@ -104,7 +104,6 @@ mod tests {
             description: String::new(),
             asset_identifier: Some("AAPL.NASDAQ".to_string()),
             isin: None,
-            underlying_symbol: None,
             quantity,
         }
     }
