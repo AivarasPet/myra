@@ -3,9 +3,9 @@ use std::collections::{HashMap, HashSet};
 use dal::{
     models::{
         asset_models::{
-            Asset, AssetBasePair, AssetId, AssetIsinId, AssetPair, AssetPairId,
-            AssetPairSharedMetadata, AssetPairUserMetadata, AssetRaw, AssetRootSymbolCandidate,
-            AssetTickerId, AssetWithMetadata, PublicAsset,
+            Asset, AssetBasePair, AssetByIsin, AssetByRootSymbol, AssetId, AssetPair, AssetPairId,
+            AssetPairSharedMetadata, AssetPairUserMetadata, AssetRaw, AssetTickerId,
+            AssetWithMetadata, PublicAsset,
         },
         base::{Count, Exsists, TotalCount},
     },
@@ -39,7 +39,7 @@ use crate::dtos::{
     paging_dto::PagingDto,
 };
 
-use crate::entities::connectors::root_symbol_candidate::select_root_symbol_candidate;
+use crate::entities::connectors::asset_candidate::{AssetCandidate, HeldAssets};
 
 pub struct AssetsService {
     db: MyraDb,
@@ -147,73 +147,62 @@ impl AssetsService {
         Ok(rows.into_iter().map(|row| (row.ticker, row.id)).collect())
     }
 
-    /// An ambiguous ISIN resolves only to the single listing held in the account.
     #[tracing::instrument(level = "debug", skip_all, fields(user_id = %user_id))]
-    pub async fn resolve_isins(
+    pub(crate) async fn resolve_isins(
         &self,
         user_id: Uuid,
-        account_id: Uuid,
-        isins: HashSet<String>,
-    ) -> anyhow::Result<HashMap<String, i32>> {
-        if isins.is_empty() {
+        held: &HeldAssets,
+        keys: HashSet<(String, String)>,
+    ) -> anyhow::Result<HashMap<(String, String), i32>> {
+        if keys.is_empty() {
             return Ok(HashMap::new());
         }
-        let query =
-            asset_queries::get_asset_ids_by_isins(user_id, account_id, isins.into_iter().collect());
-        let rows = self.db.fetch_all::<AssetIsinId>(query).await?;
+        let isins: HashSet<String> = keys.iter().map(|(isin, _)| isin.clone()).collect();
+        let query = asset_queries::get_assets_by_isins(user_id, isins.into_iter().collect());
+        let rows = self.db.fetch_all::<AssetByIsin>(query).await?;
 
-        let mut candidates: HashMap<String, Vec<AssetIsinId>> = HashMap::new();
+        let mut candidates: HashMap<String, Vec<AssetCandidate>> = HashMap::new();
         for row in rows {
-            candidates.entry(row.isin.clone()).or_default().push(row);
+            candidates
+                .entry(row.isin.clone())
+                .or_default()
+                .push(row.into());
         }
-        Ok(candidates
+        Ok(keys
             .into_iter()
-            .filter_map(|(isin, rows)| {
-                let id = match rows.as_slice() {
-                    [only] => only.id,
-                    _ => {
-                        let mut held = rows.iter().filter(|row| row.held_in_account);
-                        match (held.next(), held.next()) {
-                            (Some(row), None) => row.id,
-                            _ => return None,
-                        }
-                    }
-                };
-                Some((isin, id))
+            .filter_map(|(isin, currency)| {
+                let id = held.select(candidates.get(&isin)?, &currency)?;
+                Some(((isin, currency), id))
             })
             .collect())
     }
 
     #[tracing::instrument(level = "debug", skip_all, fields(user_id = %user_id))]
-    pub async fn resolve_root_symbols(
+    pub(crate) async fn resolve_root_symbols(
         &self,
         user_id: Uuid,
-        account_id: Uuid,
+        held: &HeldAssets,
         keys: HashSet<(String, String)>,
     ) -> anyhow::Result<HashMap<(String, String), i32>> {
         if keys.is_empty() {
             return Ok(HashMap::new());
         }
         let root_symbols: HashSet<String> = keys.iter().map(|(root, _)| root.clone()).collect();
-        let query = asset_queries::get_asset_candidates_by_root_symbols(
-            user_id,
-            account_id,
-            root_symbols.into_iter().collect(),
-        );
-        let rows = self.db.fetch_all::<AssetRootSymbolCandidate>(query).await?;
+        let query =
+            asset_queries::get_assets_by_root_symbols(user_id, root_symbols.into_iter().collect());
+        let rows = self.db.fetch_all::<AssetByRootSymbol>(query).await?;
 
-        let mut candidates: HashMap<String, Vec<AssetRootSymbolCandidate>> = HashMap::new();
+        let mut candidates: HashMap<String, Vec<AssetCandidate>> = HashMap::new();
         for row in rows {
             candidates
                 .entry(row.root_symbol.clone())
                 .or_default()
-                .push(row);
+                .push(row.into());
         }
         Ok(keys
             .into_iter()
             .filter_map(|(root, currency)| {
-                let rows = candidates.get(&root.to_lowercase())?;
-                let id = select_root_symbol_candidate(rows, &currency)?;
+                let id = held.select(candidates.get(&root.to_lowercase())?, &currency)?;
                 Some(((root, currency), id))
             })
             .collect())

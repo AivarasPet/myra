@@ -31,6 +31,7 @@ use crate::dtos::transaction_dto::{TransactionDto, TransactionTypeDto, Transacti
 use crate::jobs::SyncConnectorBindingJob;
 use crate::providers::connector_store::BusinessConnectorStore;
 
+use crate::entities::connectors::asset_candidate::HeldAssets;
 use crate::entities::connectors::connector_transaction_batch::ConnectorTransactionBatch;
 use crate::entities::connectors::opening_buys::{
     is_synthetic_external_id, opening_buy_changed, plan_opening_buys, required_opening_buys,
@@ -45,6 +46,7 @@ use crate::entities::transactions::transaction_types::create_transaction_from_dt
 
 use super::asset_service::AssetsService;
 use super::connector_service::ConnectorService;
+use super::portfolio_overview_service::PortfolioOverviewService;
 use super::transaction_management_service::TransactionManagementService;
 use super::ServiceProviders;
 use std::collections::{HashMap, HashSet};
@@ -69,6 +71,7 @@ pub struct ConnectorSyncService {
     connectors: ConnectorService,
     transaction_management: TransactionManagementService,
     assets: AssetsService,
+    portfolio: PortfolioOverviewService,
 }
 
 impl ConnectorSyncService {
@@ -81,6 +84,7 @@ impl ConnectorSyncService {
             connectors: ConnectorService::new(providers),
             transaction_management: TransactionManagementService::new(providers),
             assets: AssetsService::new(providers),
+            portfolio: PortfolioOverviewService::new(providers),
         }
     }
 
@@ -699,12 +703,19 @@ impl ConnectorSyncService {
             needed_tickers.extend(import.instrument_ticker_candidates());
         }
         let resolved = self.assets.resolve_tickers(user_id, needed_tickers).await?;
+        let holdings = self.portfolio.get_holdings(user_id, false).await?;
+        let held = HeldAssets::new(&holdings, binding_row.sverto_account_id);
 
+        let isin_key = |import: &ProviderTransactionImport| {
+            import
+                .isin()
+                .map(|isin| (isin.to_string(), import.currency().to_string()))
+        };
         // Ticker-matched rows tell which listing an ambiguous ISIN refers to.
-        let mut resolved_isins: HashMap<String, i32> = HashMap::new();
-        let mut needed_isins: HashSet<String> = HashSet::new();
+        let mut resolved_isins: HashMap<(String, String), i32> = HashMap::new();
+        let mut needed_isins: HashSet<(String, String)> = HashSet::new();
         for import in &resolvable {
-            let Some(isin) = import.instrument_isin() else {
+            let Some(key) = isin_key(import) else {
                 continue;
             };
             match import
@@ -713,21 +724,19 @@ impl ConnectorSyncService {
                 .find_map(|candidate| resolved.get(candidate).copied())
             {
                 Some(asset_id) => {
-                    resolved_isins.entry(isin.to_string()).or_insert(asset_id);
+                    resolved_isins.entry(key).or_insert(asset_id);
                 }
                 None => {
-                    needed_isins.insert(isin.to_string());
+                    needed_isins.insert(key);
                 }
             }
         }
-        needed_isins.retain(|isin| !resolved_isins.contains_key(isin));
-        for (isin, asset_id) in self
-            .assets
-            .resolve_isins(user_id, binding_row.sverto_account_id, needed_isins)
-            .await?
-        {
-            resolved_isins.insert(isin, asset_id);
-        }
+        needed_isins.retain(|key| !resolved_isins.contains_key(key));
+        resolved_isins.extend(
+            self.assets
+                .resolve_isins(user_id, &held, needed_isins)
+                .await?,
+        );
 
         let instrument_asset_ids: Vec<Option<i32>> = resolvable
             .iter()
@@ -736,17 +745,13 @@ impl ConnectorSyncService {
                     .instrument_ticker_candidates()
                     .iter()
                     .find_map(|candidate| resolved.get(candidate).copied())
-                    .or_else(|| {
-                        import
-                            .instrument_isin()
-                            .and_then(|isin| resolved_isins.get(isin).copied())
-                    })
+                    .or_else(|| isin_key(import).and_then(|key| resolved_isins.get(&key).copied()))
             })
             .collect();
 
         let root_symbol_key = |import: &ProviderTransactionImport| {
             import
-                .dividend_root_symbol()
+                .root_symbol()
                 .map(|root| (root, import.currency().to_string()))
         };
         let needed_root_symbols: HashSet<(String, String)> = resolvable
@@ -757,7 +762,7 @@ impl ConnectorSyncService {
             .collect();
         let resolved_root_symbols = self
             .assets
-            .resolve_root_symbols(user_id, binding_row.sverto_account_id, needed_root_symbols)
+            .resolve_root_symbols(user_id, &held, needed_root_symbols)
             .await?;
 
         let instrument_asset_ids: Vec<Option<i32>> = resolvable
@@ -795,8 +800,8 @@ impl ConnectorSyncService {
                         external_id = %import.external_id(),
                         reason,
                         ticker_candidates = ?import.instrument_ticker_candidates(),
-                        isin = ?import.instrument_isin(),
-                        root_symbol = ?import.dividend_root_symbol(),
+                        isin = ?import.isin(),
+                        root_symbol = ?import.root_symbol(),
                         currency = %import.currency(),
                         amount = %import.amount(),
                         date = %import.date().date(),

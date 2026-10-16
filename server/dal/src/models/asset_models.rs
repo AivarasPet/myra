@@ -37,19 +37,17 @@ pub struct AssetTickerId {
 }
 
 #[derive(sqlx::FromRow, Debug)]
-pub struct AssetIsinId {
+pub struct AssetByIsin {
     pub id: i32,
     pub isin: String,
-    pub held_in_account: bool,
+    pub base_currency: Option<String>,
 }
 
 #[derive(sqlx::FromRow, Debug)]
-pub struct AssetRootSymbolCandidate {
+pub struct AssetByRootSymbol {
     pub id: i32,
     pub root_symbol: String,
     pub base_currency: Option<String>,
-    pub held_in_account: bool,
-    pub held_by_user: bool,
 }
 
 #[derive(sqlx::FromRow, Debug)]

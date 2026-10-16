@@ -60,15 +60,11 @@ impl ProviderTransactionImport {
         &self.transaction.currency
     }
 
-    pub fn instrument_isin(&self) -> Option<&str> {
-        self.transaction
-            .asset_identifier
-            .as_ref()
-            .and(self.transaction.isin.as_deref())
+    pub fn isin(&self) -> Option<&str> {
+        self.transaction.isin.as_deref()
     }
 
-    /// Ticker without the exchange suffix, for dividends only: a wrong trade match would create a holding.
-    pub fn dividend_root_symbol(&self) -> Option<String> {
+    pub fn root_symbol(&self) -> Option<String> {
         if !matches!(
             self.transaction.kind,
             ProviderTransactionKind::Dividend { .. }
@@ -308,7 +304,7 @@ mod tests {
     }
 
     #[test]
-    fn dividend_root_symbol_strips_exchange_from_normalised_ticker() {
+    fn root_symbol_strips_exchange_from_normalised_ticker() {
         let cases = [
             ("AAPL.NASDAQ", "AAPL"),
             ("AAPL_US_EQ", "AAPL"),
@@ -317,7 +313,7 @@ mod tests {
         ];
         for (identifier, expected) in cases {
             assert_eq!(
-                dividend(identifier).dividend_root_symbol().as_deref(),
+                dividend(identifier).root_symbol().as_deref(),
                 Some(expected),
                 "{identifier}"
             );
@@ -332,7 +328,7 @@ mod tests {
             Some(Decimal::ONE),
             ProviderTransactionKind::Trade { fee: Decimal::ZERO },
         );
-        assert_eq!(trade.dividend_root_symbol(), None);
+        assert_eq!(trade.root_symbol(), None);
     }
 
     #[test]
