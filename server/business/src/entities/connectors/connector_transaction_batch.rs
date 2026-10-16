@@ -90,6 +90,7 @@ impl ConnectorTransactionBatch {
 
 #[cfg(test)]
 mod tests {
+    use connectors::models::transaction::ProviderTransactionKind;
     use rust_decimal::Decimal;
     use time::macros::datetime;
 
@@ -105,6 +106,7 @@ mod tests {
             asset_identifier: Some("AAPL.NASDAQ".to_string()),
             isin: None,
             quantity,
+            kind: ProviderTransactionKind::Trade { fee: Decimal::ZERO },
         }
     }
 

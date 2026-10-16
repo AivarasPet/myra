@@ -1,4 +1,6 @@
-use crate::models::{MappedTransaction, ProviderTransaction, SkippedTransaction};
+use crate::models::{
+    MappedTransaction, ProviderTransaction, ProviderTransactionKind, SkippedTransaction,
+};
 use serde_json::Value;
 
 fn skipped(external_id: impl Into<String>, reason: impl Into<String>) -> MappedTransaction {
@@ -68,6 +70,7 @@ pub fn map_transaction(tx: &Value) -> MappedTransaction {
         asset_identifier: None,
         isin: None,
         quantity: None,
+        kind: ProviderTransactionKind::Regular,
     })
 }
 

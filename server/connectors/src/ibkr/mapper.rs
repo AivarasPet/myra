@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use rust_decimal::Decimal;
 use serde_json::Value;
 use time::format_description::BorrowedFormatItem;
@@ -5,13 +7,24 @@ use time::macros::format_description;
 use time::{Date, OffsetDateTime};
 
 use crate::ibkr::statement::SECTION_KEY;
-use crate::models::{MappedTransaction, ProviderTransaction, SkippedTransaction};
+use crate::models::{
+    MappedTransaction, ProviderTransaction, ProviderTransactionKind, SkippedTransaction,
+};
 
 pub(crate) const FLEX_DATE: &[BorrowedFormatItem<'static>] =
     format_description!("[year][month][day]");
 
 const SUPPORTED_ASSET_CATEGORIES: [&str; 2] = ["STK", "FUND"];
 const DIVIDEND_TYPES: [&str; 2] = ["Dividends", "Payment In Lieu Of Dividends"];
+const CASH_TRANSFER_TYPES: [&str; 5] = [
+    "Deposits/Withdrawals",
+    "Broker Interest Received",
+    "Broker Interest Paid",
+    "Bond Interest Received",
+    "Bond Interest Paid",
+];
+const ACCOUNT_FEE_TYPES: [&str; 2] = ["Other Fees", "Advisor Fees"];
+const WITHHOLDING_TAX_TYPE: &str = "Withholding Tax";
 
 fn skipped(external_id: impl Into<String>, reason: impl Into<String>) -> MappedTransaction {
     MappedTransaction::Skipped(SkippedTransaction {
@@ -117,12 +130,92 @@ fn corporate_action_root_symbol(row: &Value) -> Option<String> {
     (!root.is_empty()).then(|| root.replace(' ', "-"))
 }
 
-pub fn map_row(raw: &Value) -> Option<MappedTransaction> {
+fn map_row(raw: &Value) -> Option<MappedTransaction> {
     match attr(raw, SECTION_KEY)? {
         "Trade" => Some(map_trade(raw)),
         "CashTransaction" => Some(map_cash_transaction(raw)),
         _ => None,
     }
+}
+
+/// Withholding tax rows are folded into the dividend sharing their `actionID` and currency.
+pub fn map_rows<'a>(rows: impl IntoIterator<Item = &'a Value>) -> Vec<MappedTransaction> {
+    // Keyed by transactionID: overlapping statement windows repeat rows.
+    let mut withholding: HashMap<(&str, &str), HashMap<&str, Decimal>> = HashMap::new();
+    let mut mapped = Vec::new();
+    for raw in rows {
+        if let Some((key, transaction_id, amount)) = withholding_tax_row(raw) {
+            withholding
+                .entry(key)
+                .or_default()
+                .insert(transaction_id, amount);
+            continue;
+        }
+        if let Some(row) = map_row(raw) {
+            mapped.push((attr(raw, "actionID").zip(attr(raw, "currency")), row));
+        }
+    }
+
+    // An action can also hold reversals and re-bookings, so only one dividend takes the tax.
+    let mut recipients: HashMap<(&str, &str), String> = HashMap::new();
+    for (key, row) in &mapped {
+        let (Some(key), MappedTransaction::Provider(tx)) = (key, row) else {
+            continue;
+        };
+        if matches!(tx.kind, ProviderTransactionKind::Dividend { .. })
+            && tx.amount.is_sign_positive()
+            && withholding.contains_key(key)
+        {
+            recipients
+                .entry(*key)
+                .and_modify(|id| {
+                    if tx.external_id < *id {
+                        id.clone_from(&tx.external_id);
+                    }
+                })
+                .or_insert_with(|| tx.external_id.clone());
+        }
+    }
+    for (key, row) in &mut mapped {
+        let (Some(key), MappedTransaction::Provider(tx)) = (key, row) else {
+            continue;
+        };
+        if recipients.get(key) == Some(&tx.external_id) {
+            tx.kind = ProviderTransactionKind::Dividend {
+                withholding_tax: withholding[key].values().sum(),
+            };
+        }
+    }
+
+    let unmatched = withholding
+        .into_iter()
+        .filter(|(key, _)| !recipients.contains_key(key))
+        .flat_map(|(_, rows)| rows.into_keys())
+        .map(|transaction_id| {
+            skipped(
+                format!("cash:{transaction_id}"),
+                "withholding tax without a matching dividend",
+            )
+        });
+    mapped
+        .into_iter()
+        .map(|(_, row)| row)
+        .chain(unmatched)
+        .collect()
+}
+
+fn withholding_tax_row(raw: &Value) -> Option<((&str, &str), &str, Decimal)> {
+    if attr(raw, SECTION_KEY)? != "CashTransaction"
+        || attr(raw, "type")? != WITHHOLDING_TAX_TYPE
+        || attr(raw, "levelOfDetail").is_some_and(|level| level != "DETAIL")
+    {
+        return None;
+    }
+    Some((
+        (attr(raw, "actionID")?, attr(raw, "currency")?),
+        attr(raw, "transactionID")?,
+        decimal(raw, "amount")?,
+    ))
 }
 
 pub fn map_trade(raw: &Value) -> MappedTransaction {
@@ -159,12 +252,17 @@ pub fn map_trade(raw: &Value) -> MappedTransaction {
     if quantity.is_zero() {
         return skipped(external_id, "zero-quantity trade");
     }
-    let Some(amount) = decimal(raw, "netCash") else {
-        return skipped(external_id, "missing or unparseable netCash");
+    let Some(amount) = decimal(raw, "proceeds") else {
+        return skipped(external_id, "missing or unparseable proceeds");
     };
     let Some(currency) = attr(raw, "currency") else {
         return skipped(external_id, "missing currency");
     };
+    let commission = decimal(raw, "ibCommission").unwrap_or_default();
+    if !commission.is_zero() && attr(raw, "ibCommissionCurrency").is_some_and(|c| c != currency) {
+        return skipped(external_id, "commission charged in another currency");
+    }
+    let fee = commission + decimal(raw, "taxes").unwrap_or_default();
     let Some(date) = attr(raw, "dateTime")
         .or_else(|| attr(raw, "tradeDate"))
         .and_then(parse_flex_date)
@@ -186,6 +284,7 @@ pub fn map_trade(raw: &Value) -> MappedTransaction {
         asset_identifier: Some(asset_identifier),
         isin: instrument_isin(raw),
         quantity: Some(quantity),
+        kind: ProviderTransactionKind::Trade { fee },
     })
 }
 
@@ -218,6 +317,22 @@ pub fn map_cash_transaction(raw: &Value) -> MappedTransaction {
         return skipped(external_id, "missing or unparseable date");
     };
     let tx_type = attr(raw, "type").unwrap_or("unknown");
+    let kind = if DIVIDEND_TYPES.contains(&tx_type) {
+        ProviderTransactionKind::Dividend {
+            withholding_tax: Decimal::ZERO,
+        }
+    } else if CASH_TRANSFER_TYPES.contains(&tx_type) {
+        ProviderTransactionKind::CashTransfer
+    } else if ACCOUNT_FEE_TYPES.contains(&tx_type) {
+        ProviderTransactionKind::AccountFee
+    } else if tx_type == WITHHOLDING_TAX_TYPE {
+        return skipped(external_id, "withholding tax without a matching dividend");
+    } else {
+        return skipped(
+            external_id,
+            format!("cash transaction type {tx_type} not supported"),
+        );
+    };
     let (asset_identifier, isin) = if !DIVIDEND_TYPES.contains(&tx_type) {
         (None, None)
     } else if is_corporate_action_instrument(raw) {
@@ -237,6 +352,7 @@ pub fn map_cash_transaction(raw: &Value) -> MappedTransaction {
         asset_identifier,
         isin,
         quantity: None,
+        kind,
     })
 }
 
@@ -273,6 +389,10 @@ mod tests {
             "tradeID": "111",
             "dateTime": "20260105;093512",
             "quantity": "10",
+            "proceeds": "-1900",
+            "ibCommission": "-1",
+            "ibCommissionCurrency": "USD",
+            "taxes": "-0.25",
             "netCash": "-1901.25",
             "buySell": "BUY",
             "levelOfDetail": "EXECUTION",
@@ -287,7 +407,11 @@ mod tests {
     fn maps_buy_trade() {
         let tx = provider(map_row(&trade(json!({}))).unwrap());
         assert_eq!(tx.external_id, "trade:111");
-        assert_eq!(tx.amount, dec("-1901.25"));
+        assert_eq!(tx.amount, dec("-1900"));
+        assert_eq!(
+            tx.kind,
+            ProviderTransactionKind::Trade { fee: dec("-1.25") }
+        );
         assert_eq!(tx.quantity, Some(dec("10")));
         assert_eq!(tx.asset_identifier.as_deref(), Some("AAPL.NASDAQ"));
         assert_eq!(tx.currency, "USD");
@@ -305,12 +429,17 @@ mod tests {
             "listingExchange": "LSEETF",
             "currency": "GBP",
             "quantity": "-3",
+            "proceeds": "313.40",
+            "ibCommission": "-1",
+            "ibCommissionCurrency": "GBP",
+            "taxes": "0",
             "netCash": "312.40",
             "buySell": "SELL",
             "dateTime": "2026-02-10;14:01:00",
         }))));
         assert_eq!(tx.quantity, Some(dec("-3")));
-        assert_eq!(tx.amount, dec("312.40"));
+        assert_eq!(tx.amount, dec("313.40"));
+        assert_eq!(tx.kind, ProviderTransactionKind::Trade { fee: dec("-1") });
         assert_eq!(tx.asset_identifier.as_deref(), Some("VWRP.LSE"));
         assert_eq!(
             tx.date.date(),
@@ -354,10 +483,14 @@ mod tests {
             skip_reason(map_trade(&trade(json!({ "levelOfDetail": "ORDER" })))),
             "not an execution row (ORDER)"
         );
+        assert_eq!(
+            skip_reason(map_trade(&trade(json!({ "ibCommissionCurrency": "EUR" })))),
+            "commission charged in another currency"
+        );
     }
 
     #[test]
-    fn maps_deposit_as_cash() {
+    fn maps_deposit_as_cash_transfer() {
         let tx = provider(
             map_row(&json!({
                 "_section": "CashTransaction",
@@ -373,6 +506,7 @@ mod tests {
         );
         assert_eq!(tx.external_id, "cash:222");
         assert_eq!(tx.amount, dec("500"));
+        assert_eq!(tx.kind, ProviderTransactionKind::CashTransfer);
         assert_eq!(tx.asset_identifier, None);
         assert_eq!(tx.quantity, None);
     }
@@ -517,22 +651,131 @@ mod tests {
             "dateTime": "20260915",
         })));
         assert_eq!(tx.asset_identifier, None);
+        assert_eq!(tx.kind, ProviderTransactionKind::AccountFee);
     }
 
     #[test]
-    fn maps_withholding_tax_as_cash() {
+    fn maps_broker_interest_as_cash_transfer() {
         let tx = provider(map_cash_transaction(&json!({
+            "currency": "EUR",
+            "type": "Broker Interest Paid",
+            "amount": "-0.42",
+            "transactionID": "338",
+            "dateTime": "20260903",
+        })));
+        assert_eq!(tx.kind, ProviderTransactionKind::CashTransfer);
+        assert_eq!(tx.amount, dec("-0.42"));
+    }
+
+    #[test]
+    fn skips_unsupported_cash_transaction_types() {
+        assert_eq!(
+            skip_reason(map_cash_transaction(&json!({
+                "currency": "EUR",
+                "type": "Price Adjustments",
+                "amount": "1",
+                "transactionID": "339",
+                "dateTime": "20260903",
+            }))),
+            "cash transaction type Price Adjustments not supported"
+        );
+    }
+
+    fn cash_row(transaction_id: &str, tx_type: &str, amount: &str, action_id: &str) -> Value {
+        json!({
+            "_section": "CashTransaction",
+            "levelOfDetail": "DETAIL",
             "currency": "USD",
-            "type": "Withholding Tax",
+            "type": tx_type,
             "symbol": "MSFT",
             "listingExchange": "NASDAQ",
-            "amount": "-1.25",
-            "transactionID": "334",
+            "amount": amount,
+            "transactionID": transaction_id,
+            "actionID": action_id,
             "dateTime": "20260312",
-        })));
-        assert_eq!(tx.asset_identifier, None);
-        assert_eq!(tx.isin, None);
-        assert_eq!(tx.description, "Withholding Tax");
+        })
+    }
+
+    fn mapped_rows(rows: &[Value]) -> (Vec<ProviderTransaction>, Vec<SkippedTransaction>) {
+        let mut transactions = Vec::new();
+        let mut skipped = Vec::new();
+        for row in map_rows(rows) {
+            match row {
+                MappedTransaction::Provider(p) => transactions.push(p),
+                MappedTransaction::Skipped(s) => skipped.push(s),
+            }
+        }
+        (transactions, skipped)
+    }
+
+    #[test]
+    fn folds_withholding_tax_into_its_dividend() {
+        let (transactions, skipped) = mapped_rows(&[
+            cash_row("333", "Dividends", "8.30", "A1"),
+            cash_row("334", "Withholding Tax", "-1.25", "A1"),
+            cash_row("335", "Withholding Tax", "-0.10", "A1"),
+            // Overlapping statement windows repeat rows.
+            cash_row("334", "Withholding Tax", "-1.25", "A1"),
+        ]);
+        assert!(skipped.is_empty());
+        assert_eq!(transactions.len(), 1);
+        assert_eq!(transactions[0].external_id, "cash:333");
+        assert_eq!(
+            transactions[0].kind,
+            ProviderTransactionKind::Dividend {
+                withholding_tax: dec("-1.35")
+            }
+        );
+    }
+
+    #[test]
+    fn withholding_tax_goes_to_one_positive_dividend_of_the_action() {
+        let (transactions, _) = mapped_rows(&[
+            cash_row("402", "Dividends", "8.30", "A2"),
+            cash_row("401", "Dividends", "-8.30", "A2"),
+            cash_row("400", "Dividends", "8.30", "A2"),
+            cash_row("403", "Withholding Tax", "-1.25", "A2"),
+        ]);
+        let taxes: Vec<(&str, ProviderTransactionKind)> = transactions
+            .iter()
+            .map(|tx| (tx.external_id.as_str(), tx.kind))
+            .collect();
+        let no_tax = ProviderTransactionKind::Dividend {
+            withholding_tax: Decimal::ZERO,
+        };
+        assert_eq!(
+            taxes,
+            vec![
+                ("cash:402", no_tax),
+                ("cash:401", no_tax),
+                (
+                    "cash:400",
+                    ProviderTransactionKind::Dividend {
+                        withholding_tax: dec("-1.25")
+                    }
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn skips_withholding_tax_without_a_matching_dividend() {
+        let (transactions, skipped) = mapped_rows(&[
+            cash_row("333", "Dividends", "8.30", "A1"),
+            cash_row("334", "Withholding Tax", "-1.25", "B9"),
+        ]);
+        assert_eq!(
+            transactions[0].kind,
+            ProviderTransactionKind::Dividend {
+                withholding_tax: Decimal::ZERO
+            }
+        );
+        assert_eq!(skipped.len(), 1);
+        assert_eq!(skipped[0].external_id, "cash:334");
+        assert_eq!(
+            skipped[0].reason,
+            "withholding tax without a matching dividend"
+        );
     }
 
     #[test]
